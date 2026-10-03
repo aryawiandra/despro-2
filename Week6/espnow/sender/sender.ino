@@ -10,6 +10,7 @@
 //   clear j2-j3                              -> jalur dibuka lagi
 //   reset                                    -> semua jalur dibuka
 //   list                                     -> tabel jalur + status
+//   demo                                     -> jalankan skenario otomatis (stop = hentikan)
 //   help
 #include <WiFi.h>
 #include <esp_now.h>
@@ -50,6 +51,19 @@ const char* edgeNames[NUM_EDGES] = {
 
 uint32_t simMask = 0;
 unsigned long lastSendMs = 0;
+
+// Skenario demo: tiap DEMO_STEP_MS jalankan satu perintah (diuji dengan room 4 di hub)
+#define DEMO_STEP_MS 4000
+const char* demoSteps[] = {
+  "reset",             // semua terbuka: rute normal
+  "block j6-j7",       // jalur ke e2 putus -> hub cari rute lain
+  "block j10-j12",     // rute lewat j12 makin jauh
+  "block j11-j12",     // semua jalur ke exit tertutup -> BAHAYA
+  "reset"              // kembali normal
+};
+const int numDemoSteps = sizeof(demoSteps) / sizeof(demoSteps[0]);
+int demoIdx = -1;      // -1 = demo tidak berjalan
+unsigned long demoNextMs = 0;
 
 uint32_t readBlockedMask() {
   uint32_t mask = 0;
@@ -130,7 +144,7 @@ void printEdges() {
 }
 
 void printHelp() {
-  Serial.println("Perintah: block <jalur..> | clear <jalur..> | reset | list | help");
+  Serial.println("Perintah: block <jalur..> | clear <jalur..> | reset | list | demo | stop | help");
   Serial.println("Jalur = indeks 0-19 atau nama, mis. j2-j3 (lihat 'list'). Contoh: block j4-j5 j6-e2");
 }
 
@@ -148,6 +162,13 @@ void handleCommand(String line) {
     printEdges();
   } else if (cmd == "help" || cmd == "?") {
     printHelp();
+  } else if (cmd == "demo") {
+    demoIdx = 0;
+    demoNextMs = millis();
+    Serial.println("[DEMO] dimulai (ketik 'stop' untuk menghentikan)");
+  } else if (cmd == "stop") {
+    demoIdx = -1;
+    Serial.println("[DEMO] dihentikan");
   } else if (cmd == "reset" || ((cmd == "clear" || cmd == "c") && rest.length() == 0)) {
     simMask = 0;
     printState();
@@ -212,6 +233,18 @@ void setup() {
 void loop() {
 #if SIM_MODE
   if (Serial.available()) handleCommand(Serial.readStringUntil('\n'));
+
+  if (demoIdx >= 0 && millis() >= demoNextMs) {
+    Serial.print("[DEMO] > ");
+    Serial.println(demoSteps[demoIdx]);
+    handleCommand(demoSteps[demoIdx]);
+    demoIdx++;
+    demoNextMs = millis() + DEMO_STEP_MS;
+    if (demoIdx >= numDemoSteps) {
+      demoIdx = -1;
+      Serial.println("[DEMO] selesai");
+    }
+  }
 #endif
 
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
