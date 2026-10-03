@@ -7,6 +7,12 @@
 #define ESPNOW_CHANNEL   1
 #define SEND_INTERVAL_MS 200
 
+// 1 = mode tes komunikasi (tanpa sensor): kirim pola mask yang berganti tiap TEST_STEP_MS.
+//     LED merah di receiver akan "berjalan" dari jalur 0 sampai 19, lalu semua hijau/mati (mask=0).
+// 0 = mode normal: baca sensor sungguhan lewat mux.
+#define TEST_MODE        1
+#define TEST_STEP_MS     1000
+
 #define PIN_S0           18
 #define PIN_S1           19
 #define PIN_S2           21
@@ -36,6 +42,12 @@ uint32_t readBlockedMask() {
   return mask;
 }
 
+// Pola tes: langkah 0 = tidak ada yang terblokir, langkah 1..20 = jalur (langkah-1) terblokir
+uint32_t testMask() {
+  uint32_t step = (millis() / TEST_STEP_MS) % (NUM_EDGES + 1);
+  return step == 0 ? 0 : (1UL << (step - 1));
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -61,11 +73,20 @@ void setup() {
   if (esp_now_add_peer(&peer) != ESP_OK) {
     Serial.println("Gagal add peer");
   }
-  Serial.println("Node sensor siap.");
+  Serial.print("MAC sender ini: ");
+  Serial.println(WiFi.macAddress());
+  if (receiverMac[0] == 0xAA && receiverMac[1] == 0xBB) {
+    Serial.println("PERINGATAN: receiverMac masih placeholder, ganti dengan MAC receiver!");
+  }
+  Serial.println(TEST_MODE ? "Node sensor siap (MODE TES, tanpa sensor)." : "Node sensor siap.");
 }
 
 void loop() {
+  #if TEST_MODE
+  SensorPacket pkt = { testMask() };
+#else
   SensorPacket pkt = { readBlockedMask() };
+#endif
   esp_err_t res = esp_now_send(receiverMac, (uint8_t *)&pkt, sizeof(pkt));
 
   Serial.print("mask=0b");

@@ -14,6 +14,7 @@
 
 volatile uint32_t blockedMask = 0;
 volatile unsigned long lastPacketMs = 0;
+volatile uint32_t packetCount = 0;
 
 typedef struct __attribute__((packed)) {
   uint32_t blockedMask;
@@ -78,14 +79,18 @@ Edge edges[NUM_EDGES] = {
 
 int adjMatrix[NUM_NODES][NUM_NODES];
 
-// Callback ESP-NOW. Signature ini untuk Arduino-ESP32 core 3.x.
-// Jika memakai core 2.x, ganti parameter pertama menjadi: const uint8_t *mac
+// Callback ESP-NOW. Signature berbeda antara Arduino-ESP32 core 3.x dan 2.x.
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
 void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+#else
+void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
+#endif
   if (len != sizeof(SensorPacket)) return;
   SensorPacket pkt;
   memcpy(&pkt, data, sizeof(pkt));
   blockedMask = pkt.blockedMask;
   lastPacketMs = millis();
+  packetCount++;
 }
 
 // Terapkan bitmask dari Node 1 ke status jalur
@@ -249,6 +254,11 @@ void loop() {
     delay(500);
     return;
   }
+
+  Serial.print("RX #");
+  Serial.print(packetCount);
+  Serial.print(" mask=0b");
+  Serial.println(blockedMask, BIN);
 
   applySensorMask();
   buildAdjacencyMatrix();
