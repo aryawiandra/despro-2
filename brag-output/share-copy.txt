@@ -1,0 +1,5 @@
+Exit signs hang right where the smoke goes first, so we put ours on the floor. SAFE-EXIT runs Dijkstra on an ESP32: when a flame sensor trips, that corridor's weight goes to infinity and the LED path redraws itself toward another exit, no network needed. Group 21, Electrical Engineering UI, now building it at 1:50.
+
+---
+Versi Indonesia:
+Rambu exit dipasang tepat di tempat asap pertama berkumpul, jadi kami pindahkan ke lantai. SAFE-EXIT menjalankan Dijkstra di ESP32: begitu sensor api terpicu, bobot koridor itu jadi tak hingga dan jalur LED langsung menggambar ulang rute ke pintu keluar lain, tanpa jaringan. Kelompok 21, Teknik Elektro UI, sedang membangun maket 1:50-nya.

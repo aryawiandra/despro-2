@@ -1,0 +1,320 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>SAFE-EXIT brag</title>
+<style>
+:root{--bg:#06080c;--green:#22e07a;--green-deep:#0fae5a;--red:#ff3b3b;--ink:#eef1f5;--mute:#8a93a6;--line:#2a3347}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);font-family:"Avenir Next","Helvetica Neue",sans-serif;color:var(--ink)}
+.scene{position:absolute;inset:0;display:none}
+.abs{position:absolute}
+.cap{font-weight:600;letter-spacing:-.5px}
+.eyebrow{font-size:24px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--mute)}
+.mono{font-family:Menlo,monospace}
+#smoke{position:absolute;inset:0;width:1920px;height:1080px;filter:blur(7px);pointer-events:none}
+#dip{position:absolute;inset:0;background:#000;opacity:0}
+/* S1 */
+#s1 .ceil{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(#141821,#0b0e14);border-bottom:2px solid #1b202b}
+#sign{position:absolute;left:760px;top:190px;width:400px;height:150px;border-radius:14px;background:var(--green-deep);display:flex;align-items:center;justify-content:center;gap:22px;font-weight:800;font-size:104px;color:#fff;letter-spacing:6px}
+#sign .arrow{font-size:90px;letter-spacing:0}
+.rod{position:absolute;top:120px;width:6px;height:70px;background:#2a303c}
+#s1cap{left:0;right:0;top:820px;text-align:center;font-size:66px}
+/* S2 */
+#pct{left:0;right:0;top:250px;text-align:center;font-size:300px;font-weight:800;letter-spacing:-8px;color:#f1ece4;line-height:1}
+#s2cap{left:180px;right:180px;top:600px;text-align:center;font-size:60px;line-height:1.2}
+#s2src{left:0;right:0;top:790px;text-align:center;font-size:26px;color:var(--mute);letter-spacing:1px}
+/* wordmark */
+.wm{font-weight:800;letter-spacing:6px;line-height:1;white-space:nowrap}
+.wm b{color:var(--green);font-weight:800}
+#s3wm{left:0;right:0;top:330px;text-align:center;font-size:190px}
+#s3sub{left:0;right:0;top:560px;text-align:center;font-size:54px;color:#dfe5ec}
+/* S4 */
+#s4eye{left:120px;top:150px}
+.s4cap{left:120px;top:205px;width:640px;font-size:68px;line-height:1.12}
+#code{left:120px;top:560px;width:640px;padding:26px 30px;border-radius:14px;background:#0e131d;border:1px solid #232b3b;font-size:25px;line-height:1.55;color:#cbd3df}
+#code .k{color:#8fb4ff}#code .r{color:#ff6b6b}#code .g{color:#5fe39a}
+#serial{left:120px;top:800px;width:640px;font-size:19px;line-height:1.7;color:#7d8799}
+#serial .lbl{font-size:16px;letter-spacing:3px;color:#5b6477;margin-bottom:4px}
+#serial .ln{opacity:0}
+#graph{left:0;top:0}
+/* S5 */
+#photoFrame{left:150px;top:100px;width:660px;height:880px;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+#photoFrame img{width:100%;height:100%;object-fit:cover;transform-origin:45% 55%}
+#s5eye{left:930px;top:210px}
+.spec{left:930px;width:900px}
+.spec .t{font-size:58px;font-weight:600;display:flex;align-items:center;gap:26px}
+.spec .t i{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--green);box-shadow:0 0 18px var(--green),0 0 40px rgba(34,224,122,.5)}
+.spec .s{font-size:28px;color:var(--mute);margin:10px 0 0 48px}
+/* S6 */
+#team{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover;transform-origin:50% 45%}
+#s6grad{position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,8,12,0) 45%,rgba(6,8,12,.92) 88%)}
+#s6cap{left:120px;top:800px;font-size:78px}
+#s6sub{left:124px;top:905px;font-size:34px;color:#c9d0da}
+/* S7 */
+#s7wm{left:0;right:0;top:360px;text-align:center;font-size:200px}
+#s7sub{left:0;right:0;top:600px;text-align:center;font-size:48px;color:#dfe5ec}
+#s7small{left:0;right:0;top:680px;text-align:center;font-size:28px;color:var(--mute);letter-spacing:1px}
+</style></head>
+<body>
+<!-- S1 hook -->
+<div class="scene" id="s1">
+  <div class="ceil"></div>
+  <div class="rod" style="left:830px"></div><div class="rod" style="left:1084px"></div>
+  <div id="sign"><span>EXIT</span><span class="arrow">&#10140;</span></div>
+</div>
+<!-- S2 stakes -->
+<div class="scene" id="s2"></div>
+<!-- S3 reveal -->
+<div class="scene" id="s3"><svg id="floor3" class="abs" width="1920" height="1080"></svg></div>
+<!-- S4 graph -->
+<div class="scene" id="s4">
+  <svg id="graph" class="abs" width="1920" height="1080"></svg>
+</div>
+<!-- S5 hardware -->
+<div class="scene" id="s5">
+  <div id="photoFrame" class="abs"><img id="rig" src="rangkaian.jpg"></div>
+</div>
+<!-- S6 model -->
+<div class="scene" id="s6"><img id="team" src="team.jpg"><div id="s6grad"></div></div>
+<!-- S7 outro -->
+<div class="scene" id="s7"><svg id="floor7" class="abs" width="1920" height="1080"></svg></div>
+
+<canvas id="smoke" width="384" height="216"></canvas>
+
+<!-- text layers sit above smoke -->
+<div id="txt">
+  <div class="abs cap" id="s1cap">Exit signs hang where smoke goes first.</div>
+  <div class="abs" id="pct">0%</div>
+  <div class="abs cap" id="s2cap">of enclosed-fire deaths come from smoke inhalation.</div>
+  <div class="abs" id="s2src">U.S. Fire Administration</div>
+  <div class="abs wm" id="s3wm">SAFE-<b>EXIT</b></div>
+  <div class="abs cap" id="s3sub">Floor-level guidance, below the smoke.</div>
+
+  <div class="abs eyebrow" id="s4eye">Room 4 &middot; firmware graph &middot; 15 nodes / 20 edges</div>
+  <div class="abs cap s4cap" id="s4capA">Dijkstra finds the shortest way out.</div>
+  <div class="abs cap s4cap" id="s4capB">Fire detected.<br><span style="color:var(--green)">Route recomputed.</span></div>
+  <div class="abs mono" id="code"><span class="k">for</span> (edge e : graph.edges)<br>&nbsp;&nbsp;e.weight = sensorTriggered(e)<br>&nbsp;&nbsp;&nbsp;&nbsp;? <span class="r">INFINITY</span> : <span class="g">e.baseDistance</span>;</div>
+  <div class="abs mono" id="serial"><div class="lbl">SERIAL MONITOR</div>
+    <div class="ln" id="serA">Ruangan: 4 (via j8) -&gt; Exit: e2 | Bobot Rute: 42</div>
+    <div class="ln" id="serB" style="color:#b9f5d2">Ruangan: 4 (via j8) -&gt; Exit: e3 | Bobot Rute: 65</div></div>
+
+  <div class="abs eyebrow" id="s5eye">The hardware</div>
+  <div class="abs spec" id="sp1" style="top:280px"><div class="t"><i></i>ESP32 brain, runs offline</div><div class="s">No network, no central alarm panel</div></div>
+  <div class="abs spec" id="sp2" style="top:470px"><div class="t"><i></i>20 smoke &amp; flame sensors</div><div class="s">Read through 2&times; CD74HC4067 multiplexers</div></div>
+  <div class="abs spec" id="sp3" style="top:660px"><div class="t"><i></i>20 addressable LED segments</div><div class="s">WS2812B &middot; green = route, red = blocked</div></div>
+
+  <div class="abs cap" id="s6cap">Now building it at 1:50.</div>
+  <div class="abs" id="s6sub">Gedung K, FTUI &middot; floors 1 &amp; 2</div>
+
+  <div class="abs wm" id="s7wm">SAFE-<b>EXIT</b></div>
+  <div class="abs cap" id="s7sub">Adaptive fire-evacuation path lighting</div>
+  <div class="abs" id="s7small">Group 21 &middot; Electrical Engineering, Universitas Indonesia</div>
+</div>
+<div id="dip"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const lin=(t,a,b)=>clamp((t-a)/(b-a));
+const eo=x=>1-Math.pow(1-x,3);
+const eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const SVGNS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+
+// Text in (a->b) / out (c->d): fade + rise
+function txt(id,t,a,b,c,d,rise=28){
+  const e=$(id), i=eo(lin(t,a,b)), o=lin(t,c,d), op=Math.min(i,1-o);
+  e.style.opacity=op; e.style.transform=`translateY(${(1-i)*rise}px)`;
+  e.style.visibility=op>0?'visible':'hidden';
+}
+
+/* ---------- smoke (deterministic value-noise fbm) ---------- */
+const sc=$('smoke'),sx=sc.getContext('2d'),SW=384,SH=216,img=sx.createImageData(SW,SH);
+function hash(x,y){let h=Math.imul(x,374761393)+Math.imul(y,668265263);h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;return (h>>>0)/4294967295}
+function vn(x,y){const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+  const a=hash(xi,yi),b=hash(xi+1,yi),c=hash(xi,yi+1),d=hash(xi+1,yi+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,y){let s=0,a=.5,f=1;for(let o=0;o<4;o++){s+=a*vn(x*f,y*f);a*=.5;f*=2}return s/.9375}
+function smoothstep(e0,e1,x){const k=clamp((x-e0)/(e1-e0));return k*k*(3-2*k)}
+function drawSmoke(t,fill,inten){
+  if(inten<=0.001){sx.clearRect(0,0,SW,SH);return}
+  const d=img.data;
+  for(let py=0;py<SH;py++){const y01=py/SH;
+    for(let px=0;px<SW;px++){
+      const nx=px/SW*5.5+t*.12, ny=py/SH*3.2-t*.32;
+      const w=fbm(nx*.5+t*.05,ny*.5);
+      const n=fbm(nx+w*1.6,ny+w*.8);
+      const edge=fill+(n-.5)*.28;
+      const cover=smoothstep(edge+.1,edge-.14,y01);
+      const a=clamp(cover*inten*(.3+.95*n));
+      const i=(py*SW+px)*4, g=104+n*52;
+      d[i]=g;d[i+1]=g+4;d[i+2]=g+12;d[i+3]=a*255;
+    }}
+  sx.putImageData(img,0,0);
+}
+function smokeParams(t){
+  if(t<3.0) return [0.04+0.78*eio(lin(t,0.15,3.0)),0.96];
+  if(t<6.0) return [0.82+0.4*lin(t,3,5),0.96-0.4*lin(t,3,5)];
+  if(t<9.0) return [0.27,0.82*(1-lin(t,8.8,9.0))];
+  if(t>=21.0) return [0.22,0.5*lin(t,21.0,21.8)];
+  return [0,0];
+}
+
+/* ---------- dips between scenes ---------- */
+const CUTS=[6.0,9.0,15.0,18.5,21.0];
+function dip(t){let o=0;for(const c of CUTS)o=Math.max(o,1-clamp(Math.abs(t-c)/0.2));if(t>23.25)o=Math.max(o,lin(t,23.25,23.5));return eio(o)}
+
+/* ---------- floor LEDs (S3) ---------- */
+const VP=[960,600], F3=$('floor3');
+el('rect',{x:0,y:600,width:1920,height:480,fill:'url(#fl)'},F3);
+const defs=el('defs',{},F3);
+const lg=el('linearGradient',{id:'fl',x1:0,y1:0,x2:0,y2:1},defs);
+el('stop',{offset:'0','stop-color':'#06080c'},lg);el('stop',{offset:'1','stop-color':'#10151e'},lg);
+for(let k=-6;k<=6;k++){el('line',{x1:VP[0],y1:VP[1],x2:960+k*420,y2:1080,stroke:'#141a24','stroke-width':2},F3)}
+const leds3=[]; // two strips + center chevrons
+[-560,560].forEach(xo=>{
+  for(let i=0;i<26;i++){const z=i/26, s=1/(1+z*6); // perspective
+    const x=VP[0]+xo*s*1.7, y=VP[1]+480*s;
+    leds3.push({c:el('circle',{cx:x,cy:y,r:10*s+1.5,fill:'#0b3a22'},F3),z:1-s});
+  }});
+const chev3=[];
+for(let i=0;i<9;i++){const s=1/(1+i/9*6),y=VP[1]+440*s,w=90*s,h=34*s;
+  chev3.push({p:el('path',{d:`M${960-w},${y+h} L960,${y} L${960+w},${y+h}`,fill:'none',stroke:'#0b3a22','stroke-width':9*s+1,'stroke-linecap':'round','stroke-linejoin':'round'},F3),z:1-s});}
+function renderS3(t){
+  const rise=eo(lin(t,6.0,6.5));F3.style.transform=`translateY(${(1-rise)*260}px)`;
+  const front=lin(t,6.15,7.3); // chase from near (z=0) to far (z~1)
+  leds3.forEach(o=>{const lit=front*1.05>o.z;const pulse=.75+.25*Math.sin(t*9-o.z*14);
+    o.c.setAttribute('fill',lit?'#22e07a':'#0b3a22');o.c.setAttribute('opacity',lit?pulse:1);
+    o.c.style.filter=lit?'drop-shadow(0 0 10px #22e07a)':'none'});
+  chev3.forEach(o=>{const lit=front*1.05>o.z;const pulse=.55+.45*Math.max(0,Math.sin(t*6-o.z*9));
+    o.p.setAttribute('stroke',lit?'#22e07a':'#0b3a22');o.p.setAttribute('opacity',lit?pulse:1);
+    o.p.style.filter=lit?'drop-shadow(0 0 12px #22e07a)':'none'});
+}
+
+/* ---------- graph (team visualizer layout, firmware weights) ---------- */
+const P={'5':[400,30],'j8':[310,68],'4':[217,101],'j7':[396,117],'j9':[299,157],'j6':[501,133],'e2':[589,158],'3':[369,197],'j5':[458,207],'j4':[544,238],'7':[168,219],'j10':[262,246],'j11':[199,311],'j12':[297,339],'e1':[354,274],'2':[457,292],'j3':[518,338],'j2':[405,352],'6':[194,403],'e3':[280,435],'1':[373,435],'j1':[473,419],'0':[431,501]};
+const S=1.8, OX=980, OY=112; const X=k=>OX+(P[k][0]-168)*S, Y=k=>OY+(P[k][1]-30)*S;
+const EDGES=[['j1','j2',49],['j1','j3',23],['j2','j3',12],['j2','j12',13],['j3','j4',13],['j4','j5',23],['j4','j6',12],['j5','j6',49],['j6','j7',13],['j7','j8',23],['j7','j9',12],['j8','j9',49],['j9','j10',13],['j10','j11',49],['j10','j12',12],['j11','j12',23],['j2','e1',5],['j4','e2',6],['j6','e2',6],['j12','e3',5],
+ ['j8','5',1],['j8','4',1],['j5','3',1],['j5','2',1],['j1','1',1],['j1','0',1],['j11','7',1],['j11','6',1]];
+const ROUTE_A=['4','j8','j7','j6','e2'], ROUTE_B=['4','j8','j7','j9','j10','j12','e3'];
+const G=$('graph');
+const gdefs=el('defs',{},G);
+const gBase=el('g',{},G), gRoute=el('g',{},G), gDots=el('g',{},G), gNodes=el('g',{},G), gFx=el('g',{},G);
+const eKey=(a,b)=>[a,b].sort().join('|');
+const edgeEls={};
+EDGES.forEach(([a,b,w],i)=>{
+  const ln=el('line',{x1:X(a),y1:Y(a),x2:X(b),y2:Y(b),stroke:'#2a3347','stroke-width':4,'stroke-linecap':'round'},gBase);
+  let lbl=null;
+  if(w>1){const mx=(X(a)+X(b))/2,my=(Y(a)+Y(b))/2;
+    const g=el('g',{},gBase);el('rect',{x:mx-20,y:my-15,width:40,height:30,rx:8,fill:'#0b0f17'},g);
+    const tx=el('text',{x:mx,y:my+7,'text-anchor':'middle','font-size':19,'font-family':'Avenir Next','font-weight':600,fill:'#6b7488'},g);tx.textContent=w;lbl={g,tx};}
+  edgeEls[eKey(a,b)]={ln,lbl,i};
+});
+function routeSegs(route){const segs=[];for(let i=0;i<route.length-1;i++){const a=route[i],b=route[i+1];
+  const L=Math.hypot(X(b)-X(a),Y(b)-Y(a));
+  const ln=el('line',{x1:X(a),y1:Y(a),x2:X(b),y2:Y(b),stroke:'#22e07a','stroke-width':8,'stroke-linecap':'round','stroke-dasharray':L,'stroke-dashoffset':L,opacity:0},gRoute);
+  segs.push({a,b,L,ln})}return segs}
+const segA=routeSegs(ROUTE_A), segB=routeSegs(ROUTE_B);
+const NODE_KEYS=Object.keys(P), nodeEls={};
+NODE_KEYS.forEach((k,i)=>{
+  const g=el('g',{},gNodes); const isExit=k[0]==='e', isJ=k[0]==='j';
+  let shape;
+  if(isExit){shape=el('rect',{x:X(k)-30,y:Y(k)-24,width:60,height:48,rx:10,fill:'#0c1a13',stroke:'#1f7a4a','stroke-width':3},g)}
+  else shape=el('circle',{cx:X(k),cy:Y(k),r:isJ?24:18,fill:isJ?'#141b2a':'#262e40',stroke:isJ?'#4b5670':'#5d6780','stroke-width':3},g);
+  const tx=el('text',{x:X(k),y:Y(k)+7,'text-anchor':'middle','font-size':isJ?18:19,'font-family':'Avenir Next','font-weight':700,fill:isExit?'#5fe39a':'#c9d0da'},g);tx.textContent=k;
+  nodeEls[k]={g,shape,tx,i};
+});
+// you-are-here
+const yah=el('g',{},gFx);
+const yahRing=el('circle',{cx:X('4'),cy:Y('4'),r:30,fill:'none',stroke:'#eef1f5','stroke-width':3},yah);
+const yahT=el('text',{x:X('4')-44,y:Y('4')+8,'text-anchor':'end','font-size':24,'font-family':'Avenir Next','font-weight':700,fill:'#eef1f5'},yah);yahT.textContent='You are here';
+// fire
+const fx=(X('j6')+X('j7'))/2, fy=(Y('j6')+Y('j7'))/2;
+const rg=el('radialGradient',{id:'fg'},gdefs);el('stop',{offset:'0','stop-color':'#ff3b3b','stop-opacity':.75},rg);el('stop',{offset:'1','stop-color':'#ff3b3b','stop-opacity':0},rg);
+const fireG=el('g',{},gFx);
+const fireGlow=el('circle',{cx:fx,cy:fy,r:70,fill:'url(#fg)'},fireG);
+const fireT=el('text',{x:fx,y:fy+16,'text-anchor':'middle','font-size':54},fireG);fireT.textContent='\u{1F525}';
+const fireL=el('text',{x:fx,y:fy-52,'text-anchor':'middle','font-size':20,'font-family':'Avenir Next','font-weight':700,fill:'#ff6b6b','letter-spacing':2},fireG);fireL.textContent='FLAME SENSOR';
+const dots=[];for(let i=0;i<9;i++)dots.push(el('circle',{r:7,fill:'#eafff2',opacity:0},gDots));
+const GREEN_GLOW='drop-shadow(0 0 10px rgba(34,224,122,.9))', RED_GLOW='drop-shadow(0 0 10px rgba(255,59,59,.9))';
+function drawSegs(segs,t,start,step,from=0){segs.forEach((s,i)=>{if(i<from)return;const p=eo(lin(t,start+(i-from)*step,start+(i-from+1)*step));
+  s.ln.setAttribute('stroke-dashoffset',s.L*(1-p));s.ln.setAttribute('opacity',p>0?1:0)})}
+function posOn(segs,d){for(const s of segs){if(d<=s.L){const k=d/s.L;return [X(s.a)+(X(s.b)-X(s.a))*k,Y(s.a)+(Y(s.b)-Y(s.a))*k]}d-=s.L}const l=segs[segs.length-1];return [X(l.b),Y(l.b)]}
+function renderS4(t){
+  const T=t-9, fire=T>=3.0;
+  Object.values(edgeEls).forEach(o=>{const p=eo(lin(T,.05+o.i*.012,.45+o.i*.012));o.ln.setAttribute('opacity',p);if(o.lbl)o.lbl.g.setAttribute('opacity',p)});
+  Object.values(nodeEls).forEach(o=>{const p=eo(lin(T,.15+o.i*.015,.45+o.i*.015));o.g.setAttribute('opacity',p)});
+  const yp=eo(lin(T,.7,.95)), ph=(T*1.4)%1;yah.setAttribute('opacity',yp);
+  yahRing.setAttribute('r',30+12*ph);yahRing.setAttribute('stroke-opacity',1-ph);
+  // route A draws 9.9 -> 11.1
+  segA.forEach(s=>{s.ln.setAttribute('stroke','#22e07a');s.ln.style.filter=GREEN_GLOW});
+  drawSegs(segA,t,9.9,.3);
+  if(fire){const k=lin(T,3.0,3.45);
+    segA.forEach((s,i)=>{if(i>=2){s.ln.setAttribute('stroke','#ff3b3b');s.ln.style.filter=RED_GLOW;
+      const blink=(Math.floor((T-3.0)/0.09)%2)?.35:1;s.ln.setAttribute('opacity',k<1?blink*(1-k*0.6):0)}});}
+  // blocked edge
+  const bl=edgeEls[eKey('j6','j7')];
+  if(fire){bl.ln.setAttribute('stroke','#ff3b3b');bl.ln.setAttribute('stroke-width',7);bl.ln.style.filter=RED_GLOW;
+    bl.lbl.tx.textContent='∞';bl.lbl.tx.setAttribute('fill','#ff6b6b');bl.lbl.tx.setAttribute('font-size',26);bl.lbl.tx.setAttribute('y',(Y('j6')+Y('j7'))/2+9);}
+  else{bl.ln.setAttribute('stroke','#2a3347');bl.ln.setAttribute('stroke-width',4);bl.ln.style.filter='none';bl.lbl.tx.textContent='13';bl.lbl.tx.setAttribute('fill','#6b7488');bl.lbl.tx.setAttribute('font-size',19);bl.lbl.tx.setAttribute('y',(Y('j6')+Y('j7'))/2+7)}
+  const fp=eo(lin(T,3.0,3.25));fireG.setAttribute('opacity',fp);
+  fireT.setAttribute('transform',`translate(${fx},${fy}) scale(${.4+.6*fp+.05*Math.sin(T*14)}) translate(${-fx},${-fy})`);
+  fireGlow.setAttribute('r',70+10*Math.sin(T*9));
+  // route B (shares first two segs with A)
+  segB.forEach(s=>{s.ln.style.filter=GREEN_GLOW;s.ln.setAttribute('opacity',0)});
+  if(fire){segB.forEach((s,i)=>{if(i<2){s.ln.setAttribute('stroke-dashoffset',0);s.ln.setAttribute('opacity',1)}});drawSegs(segB,t,12.5,.3,2)}
+  // exits light up on arrival
+  const eA=lin(T,2.1,2.25)*(1-lin(T,3.0,3.3)), eB=lin(T,4.7,4.85);
+  [['e2',eA],['e3',eB]].forEach(([k,v])=>{const o=nodeEls[k];o.shape.setAttribute('fill',v>0?`rgba(34,224,122,${.85*v})`:'#0c1a13');
+    o.tx.setAttribute('fill',v>.5?'#04130a':'#5fe39a');o.shape.style.filter=v>0?`drop-shadow(0 0 ${18*v}px rgba(34,224,122,.9))`:'none'});
+  // LED chase dots along active route
+  const active=(T>2.1&&T<3.0)?segA:(T>4.7?segB:null);
+  const total=active?active.reduce((s,x)=>s+x.L,0):0;
+  dots.forEach((d,i)=>{if(!active){d.setAttribute('opacity',0);return}
+    const dd=((T*260)+i*(total/dots.length))%total;const [x,y]=posOn(active,dd);d.setAttribute('cx',x);d.setAttribute('cy',y);d.setAttribute('opacity',.9)});
+  $('serA').style.opacity=eo(lin(T,2.15,2.35));$('serB').style.opacity=eo(lin(T,4.75,4.95));
+}
+
+/* ---------- outro floor strip (S7) ---------- */
+const F7=$('floor7'), leds7=[];
+for(let i=0;i<48;i++){leds7.push(el('circle',{cx:120+i*(1680/47),cy:900,r:9,fill:'#0b3a22'},F7))}
+function renderS7(t){const front=lin(t,21.05,21.9);
+  leds7.forEach((c,i)=>{const z=i/47,lit=front*1.02>z;const pulse=.7+.3*Math.sin(t*7-z*16);
+    c.setAttribute('fill',lit?'#22e07a':'#0b3a22');c.setAttribute('opacity',lit?pulse:1);c.style.filter=lit?'drop-shadow(0 0 10px #22e07a)':'none'})}
+
+/* ---------- master ---------- */
+const SCENES=[['s1',0,3.0],['s2',3.0,6.0],['s3',6.0,9.0],['s4',9.0,15.0],['s5',15.0,18.5],['s6',18.5,21.0],['s7',21.0,99]];
+function render(t){
+  SCENES.forEach(([id,a,b])=>{$(id).style.display=(t>=a&&t<b)?'block':'none'});
+  const [fill,inten]=smokeParams(t);drawSmoke(t,fill,inten);
+  // S1
+  const sg=$('sign'),dim=1-.85*lin(t,1.1,2.6),fl=(t>1.3&&t<2.6&&Math.sin(t*53)>.6)?.55:1;
+  sg.style.opacity=dim*fl;sg.style.boxShadow=`0 0 ${60*dim}px rgba(34,224,122,${.7*dim}),0 0 ${160*dim}px rgba(34,224,122,${.35*dim})`;
+  txt('s1cap',t,.35,.65,2.85,3.0);
+  // S2
+  txt('pct',t,3.0,3.25,5.8,5.95,0);$('pct').textContent=Math.round(90*eo(lin(t,3.05,3.9)))+'%';
+  txt('s2cap',t,3.15,3.45,5.8,5.95);txt('s2src',t,3.4,3.7,5.8,5.95,0);
+  // S3
+  if(t>=6&&t<9)renderS3(t);
+  const wmIn=eo(lin(t,6.35,6.75));$('s3wm').style.opacity=Math.min(wmIn,1-lin(t,8.8,8.95));$('s3wm').style.transform=`scale(${1.06-.06*wmIn})`;
+  txt('s3sub',t,6.55,6.85,8.8,8.95);
+  // S4
+  if(t>=9&&t<15)renderS4(t);
+  txt('s4eye',t,9.15,9.45,14.8,14.95,0);
+  txt('s4capA',t,9.35,9.7,11.85,12.0);txt('s4capB',t,12.1,12.4,14.8,14.95);
+  txt('code',t,12.3,12.6,14.8,14.95);txt('serial',t,11.0,11.2,14.8,14.95,0);
+  // S5
+  $('rig').style.transform=`scale(${1+.08*lin(t,15,18.5)})`;
+  txt('s5eye',t,15.15,15.4,18.3,18.45,0);
+  txt('sp1',t,15.3,15.6,18.3,18.45);txt('sp2',t,15.7,16.0,18.3,18.45);txt('sp3',t,16.1,16.4,18.3,18.45);
+  // S6
+  const k6=lin(t,18.5,21);$('team').style.transform=`scale(${1.04+.08*k6}) translate(${-12*k6}px,${-6*k6}px)`;
+  txt('s6cap',t,18.65,18.95,20.8,20.95);txt('s6sub',t,18.8,19.1,20.8,20.95);
+  // S7
+  if(t>=21)renderS7(t);
+  const w7=eo(lin(t,21.2,21.6));$('s7wm').style.opacity=w7;$('s7wm').style.transform=`scale(${1.05-.05*w7})`;
+  txt('s7sub',t,21.35,21.65,99,100);txt('s7small',t,21.5,21.8,99,100,0);
+  $('dip').style.opacity=dip(t);
+}
+window.render=render;
+window.ready=Promise.all([document.fonts.ready,...[...document.images].map(i=>i.decode())]);
+render(0);
+</script>
+</body></html>
