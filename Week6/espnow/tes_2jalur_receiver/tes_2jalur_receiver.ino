@@ -1,12 +1,15 @@
 // TES 2 JALUR - RECEIVER (ESP32 #2)
-// Terima status 2 jalur dari sender. LED hijau menyala pada jalur yang AMAN, mati pada jalur terblokir.
-// Tanpa input di sender = kedua LED menyala. Tidak ada paket 2 detik = kedua LED biru (link putus).
+// Terima status 2 jalur dari sender. Strip hijau menyala pada jalur yang AMAN, mati pada jalur terblokir.
+// Tanpa input di sender = kedua strip menyala. Tidak ada paket 2 detik = kedua strip biru (link putus).
+// Tiap jalur = 1 strip LED dengan pin data sendiri.
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 
-#define LED_PIN          5      // pin data LED (WS2812B), LED jalur 1 = pixel 0, jalur 2 = pixel 1
+#define LED_PIN_1        5      // pin data strip jalur 1
+#define LED_PIN_2        18     // pin data strip jalur 2
+#define LEDS_PER_STRIP   10     // ISI sesuai jumlah LED sebenarnya di tiap strip
 #define NUM_PATHS        2
 #define LED_BRIGHTNESS   60
 #define ESPNOW_CHANNEL   1      // harus sama dengan sender
@@ -19,7 +22,9 @@ typedef struct __attribute__((packed)) {
 volatile uint8_t blockedMask = 0;
 volatile unsigned long lastPacketMs = 0;
 
-Adafruit_NeoPixel strip(NUM_PATHS, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip1(LEDS_PER_STRIP, LED_PIN_1, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip2(LEDS_PER_STRIP, LED_PIN_2, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel *strips[NUM_PATHS] = { &strip1, &strip2 };  // strips[0] = jalur 1, strips[1] = jalur 2
 
 // Signature callback berbeda antara Arduino-ESP32 core 3.x dan 2.x
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -35,34 +40,38 @@ void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
 }
 
 void showLinkLost() {
-  for (int i = 0; i < NUM_PATHS; i++) strip.setPixelColor(i, strip.Color(0, 0, 40));
-  strip.show();
+  for (int i = 0; i < NUM_PATHS; i++) {
+    strips[i]->fill(strips[i]->Color(0, 0, 40));
+    strips[i]->show();
+  }
   Serial.println("[LINK PUTUS] Tidak ada data dari sender");
 }
 
 // Hijau = jalur aman, mati = jalur terblokir
 void showPaths(uint8_t mask) {
-  strip.clear();
   for (int i = 0; i < NUM_PATHS; i++) {
     bool blocked = (mask >> i) & 1;
-    if (!blocked) strip.setPixelColor(i, strip.Color(0, 255, 0));
+    strips[i]->clear();
+    if (!blocked) strips[i]->fill(strips[i]->Color(0, 255, 0));
+    strips[i]->show();
   }
-  strip.show();
 
   Serial.print("Jalur 1: ");
-  Serial.print((mask & 1) ? "TERBLOKIR (LED mati)" : "aman (LED nyala)");
+  Serial.print((mask & 1) ? "TERBLOKIR (strip mati)" : "aman (strip nyala)");
   Serial.print(" | Jalur 2: ");
-  Serial.println((mask & 2) ? "TERBLOKIR (LED mati)" : "aman (LED nyala)");
+  Serial.println((mask & 2) ? "TERBLOKIR (strip mati)" : "aman (strip nyala)");
   if ((mask & 3) == 3) Serial.println("[BAHAYA] Kedua jalur terblokir");
 }
 
 void setup() {
   Serial.begin(115200);
 
-  strip.begin();
-  strip.setBrightness(LED_BRIGHTNESS);
-  strip.clear();
-  strip.show();
+  for (int i = 0; i < NUM_PATHS; i++) {
+    strips[i]->begin();
+    strips[i]->setBrightness(LED_BRIGHTNESS);
+    strips[i]->clear();
+    strips[i]->show();
+  }
 
   WiFi.mode(WIFI_STA);
   esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
