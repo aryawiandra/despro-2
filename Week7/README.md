@@ -277,122 +277,99 @@ rangkaian dan strip asli belum diuji di sesi ini.
 
 ---
 
-# Tampilan di versi 5 jalur (`dijkstra_5jalur/`)
+# UJI 5 STRIP (`dijkstra_5jalur/`) — peta lengkap, 5 strip LED, 5 pin, 5 sensor
 
 Folder `dijkstra_5jalur/` adalah **kode baru khusus uji 5 jalur / 5 pin**. Kode 20 jalur (`dijkstra_strip/`), `dijkstra_graph/`,
-dan `led_biasa_2jalur/` tidak diubah (merah di versi 20 jalur tetap menyala diam, tidak berkedip).
+dan `led_biasa_2jalur/` tidak diubah.
+
+**Cara kerja:** Dijkstra tetap berjalan di **peta lengkap 20 jalur** (sender, `graph.h`). Strip LED fisik hanya ada di 5 jalur
+dengan panjang berbeda, dan receiver hanya menampilkan 5 jalur itu. Sensor api asli juga hanya di 5 jalur itu; api di jalur
+lain disimulasikan lewat teks (`block j6-j7`).
+
+| Jalur | Nama | Bobot | LED | Strip (receiver) | Sensor api (sender) |
+|---|---|---|---|---|---|
+| #3 | j2-j3 | 12 | **7** | **GPIO 4** → 330 Ω → DIN | **GPIO 32** ← DO |
+| #11 | j7-j9 | 12 | **8** | **GPIO 5** → 330 Ω → DIN | **GPIO 33** ← DO |
+| #15 | j10-j12 | 12 | **8** | **GPIO 13** → 330 Ω → DIN | **GPIO 25** ← DO |
+| #18 | j4-e2 | 6 | **6** | **GPIO 14** → 330 Ω → DIN | **GPIO 26** ← DO |
+| #19 | j6-e2 | 6 | **5** | **GPIO 16** → 330 Ω → DIN | **GPIO 27** ← DO |
+
+Total 34 LED. Panjang LED ada di `STRIPS[]` (`receiver.ino`); pin sensor di `SENSOR_PIN[]` (`sender.ino`).
+
+## Tampilan
 
 | Kondisi jalur | Tampilan strip |
 |---|---|
-| Aman, menuju exit (rute tercepat dari ruangan) | **Hijau** redup + kepala terang yang berjalan sekuensial searah exit, jalur berurutan dari ruangan sampai exit |
-| Kena api (sensor = 1) | **Merah berkedip** (nyala 400 ms, padam 400 ms) |
+| Aman, menuju exit (rute tercepat dari ruangan) | **Hijau** redup + kepala terang yang berjalan sekuensial searah exit |
+| Kena api (sensor atau teks = 1) | **Merah berkedip** (nyala 400 ms, padam 400 ms) |
 | Aman tapi bukan rute | Mati |
 | Link putus > 2 detik | Titik biru redup tiap 10 LED |
 
-Parameter di `receiver.ino`: `BLINK_MS` (kecepatan kedip), `ANIMATE` (0 = hijau diam), `CHASE_LEN`, `CHASE_STEP_MS`.
+Parameter di `receiver.ino`: `BLINK_MS`, `ANIMATE` (0 = hijau diam), `CHASE_LEN`, `CHASE_STEP_MS`, `LED_BRIGHTNESS`.
 
----
+## Skenario (hasil tes di PC; `room all`, semua ruangan dipandu ke exit terdekat)
 
-# VERSI 5 JALUR (`dijkstra_5jalur/`) — 5 jalur, 5 pin strip, 5 sensor
-
-Hanya **5 jalur** dari graf 20 jalur yang dipakai; jalur lain dianggap tidak ada. Default: sudut exit e2 dengan 3 rute masuk
-dari ruangan 2 dan 3 (junction j5):
-
-```
- ruang 2,3 ── j5 ──(#6, 23)── j4 ──(#18, 6)── e2 (exit)
-               \               |                 /
-             (#8, 49)        (#7, 12)        (#19, 6)
-                 \             |              /
-                  └─────────── j6 ───────────┘
-```
-
-| Jalur | Nama | Bobot | Strip (receiver) | Sensor api (sender) |
-|---|---|---|---|---|
-| #6 | j4-j5 | 23 | **GPIO 4** → DIN | **GPIO 32** ← DO |
-| #7 | j4-j6 | 12 | **GPIO 5** → DIN | **GPIO 33** ← DO |
-| #8 | j5-j6 | 49 | **GPIO 13** → DIN | **GPIO 25** ← DO |
-| #18 | j4-e2 | 6 | **GPIO 14** → DIN | **GPIO 26** ← DO |
-| #19 | j6-e2 | 6 | **GPIO 16** → DIN | **GPIO 27** ← DO |
-
-Rute dari ruangan 2 dan 3 (hasil tes di PC; bobot sudah +1 penghubung ruangan):
-
-| Kondisi | Strip hijau | Strip merah berkedip | Rute (bobot) |
+| Api di (cara) | Strip hijau | Strip merah berkedip | Keterangan |
 |---|---|---|---|
-| Tanpa api | #6, #18 | – | j5 > j4 > e2 (30) |
-| Api di #18 j4-e2 | #6, #7, #19 | #18 | j5 > j4 > j6 > e2 (42) |
-| Api di #6 j4-j5 | #8, #19 | #6 | j5 > j6 > e2 (56) |
-| Api di #18 dan #6 | #8, #19 | #18, #6 | j5 > j6 > e2 (56) |
-| Api di #19 dan #18 | – | #19, #18 | `[BAHAYA]`, tidak ada rute |
+| tanpa api | #3, #18, #19 | – | ruang 0,1: j1>j3>j2>e1; ruang 2,3: j5>j4>e2; ruang 4,5: j8>j7>j6>e2 |
+| j6-j7 (#9, teks) | #3, #11, #15, #18 | – | ruang 4,5 pindah ke e3 lewat j8>j7>j9>j10>j12>e3; #19 mati |
+| j7-j8 (#10, teks) | #3, #15, #18 | – | ruang 4,5 lewat j8>j9>j10>j12>e3 |
+| j2-e1 (#17, teks) | #18, #19 | – | ruang 0,1 pindah lewat j3>j4>e2; #3 mati |
+| j4-e2 (#18, sensor) | #3, #19 | #18 | ruang 2,3 lewat j5>j4>j6>e2 |
+| j6-e2 (#19, sensor) | #3, #18 | #19 | ruang 4,5 lewat j8>j7>j6>j4>e2 |
+| j4-e2 dan j6-e2 | #3 | #18, #19 | tinggal jalur ke e1 dan e3 |
 
 ## Rangkaian ESP32 #2 — RECEIVER (5 strip)
 
-| Dari | Ke | Catatan |
-|---|---|---|
-| GPIO 4 | resistor 330 Ω → **DIN** strip #6 (j4-j5) | |
-| GPIO 5 | resistor 330 Ω → **DIN** strip #7 (j4-j6) | |
-| GPIO 13 | resistor 330 Ω → **DIN** strip #8 (j5-j6) | |
-| GPIO 14 | resistor 330 Ω → **DIN** strip #18 (j4-e2) | |
-| GPIO 16 | resistor 330 Ω → **DIN** strip #19 (j6-e2) | |
-| GND ESP32 | GND tiap strip **dan** GND catu 5 V | satu ground bersama |
-| Catu 5 V (+) | +5V tiap strip (paralel) | bukan dari pin ESP32 |
-| Kapasitor 1000 µF | antara +5V dan GND di catu | polaritas: kaki panjang ke +5V |
-| USB ESP32 | laptop / power bank | daya ESP32 saja |
-
-Tiap strip 40 LED. Arah data strip = dari node pertama ke node kedua nama jalur (#6 mengalir dari j4 ke j5). Kalau terpasang
-kebalikannya, set `reversed = true` di `STRIPS[]` pada `receiver.ino`.
-
-## Rangkaian ESP32 #1 — SENDER (5 sensor api)
-
 | Dari | Ke |
 |---|---|
-| Sensor jalur #6, pin **DO** | GPIO 32 |
-| Sensor jalur #7, pin **DO** | GPIO 33 |
-| Sensor jalur #8, pin **DO** | GPIO 25 |
-| Sensor jalur #18, pin **DO** | GPIO 26 |
-| Sensor jalur #19, pin **DO** | GPIO 27 |
+| GPIO 4 | resistor 330 Ω → **DIN** strip #3 (j2-j3, 7 LED) |
+| GPIO 5 | resistor 330 Ω → **DIN** strip #11 (j7-j9, 8 LED) |
+| GPIO 13 | resistor 330 Ω → **DIN** strip #15 (j10-j12, 8 LED) |
+| GPIO 14 | resistor 330 Ω → **DIN** strip #18 (j4-e2, 6 LED) |
+| GPIO 16 | resistor 330 Ω → **DIN** strip #19 (j6-e2, 5 LED) |
+| GND ESP32 | GND semua strip |
+| Pin VIN / 5V ESP32 (rel USB 5 V) | +5V semua strip (paralel) |
+| Kapasitor 470–1000 µF | antara +5V dan GND di dekat strip (kaki panjang ke +5V) |
+| USB ESP32 | laptop |
+
+Arah data strip = dari node pertama ke node kedua nama jalur (#3 mengalir dari j2 ke j3). Kalau terpasang kebalikannya,
+set `reversed = true` di `STRIPS[]`. Kalau LED berkedip acak atau salah warna: pasang level shifter 74HCT245 di tiap kabel data.
+
+## Rangkaian ESP32 #1 — SENDER (5 sensor)
+
+| Sensor di jalur | Pin **DO** sensor ke |
+|---|---|
+| #3 j2-j3 | GPIO 32 |
+| #11 j7-j9 | GPIO 33 |
+| #15 j10-j12 | GPIO 25 |
+| #18 j4-e2 | GPIO 26 |
+| #19 j6-e2 | GPIO 27 |
 | VCC semua sensor | 3V3 ESP32 |
 | GND semua sensor | GND ESP32 |
 
 Pin ini punya pull-up internal, jadi tidak perlu resistor tambahan. Modul flame sensor aktif LOW (DO = 0 saat ada api);
-kalau modulmu aktif HIGH ubah `SENSOR_ACTIVE_LEVEL`. Pin `AO` tidak dipakai. Ruangan dipilih otomatis: `room all` memandu
-ruangan 2 dan 3 sekaligus.
+kalau modulmu aktif HIGH ubah `SENSOR_ACTIVE_LEVEL`. Pin `AO` tidak dipakai. Jalur lain (tanpa sensor, pin = -1) hanya bisa
+disimulasikan lewat teks.
 
-## Ganti 5 jalur yang dipakai
-
-Edit dua tempat dengan nomor jalur yang sama (nomor jalur lihat tabel 20 jalur di atas):
-1. `sender/sender.ino` → `ACTIVE[]` (nomor jalur + pin sensor).
-2. `receiver/receiver.ino` → `STRIPS[]` (nomor jalur + pin strip + jumlah LED).
-Kode memeriksa nomor ganda, pin ganda, dan pin tidak valid lewat Serial. Syarat: minimal satu junction ruangan
-(j1, j5, j8, j11) ada di jalur yang dipilih supaya ada rute yang dihitung.
-
-Perintah sender (Serial Monitor 115200): `edges`, `list`, `sensors`, `block j4-e2`, `clear j4-e2`, `reset`, `room all`.
+Perintah sender (Serial Monitor 115200, Newline): `room all`, `room N`, `block j6-j7`, `clear j6-j7`, `reset`, `edges`,
+`sensors`, `list`.
 Upload: `cd Week7/dijkstra_5jalur/receiver && pio run -t upload` (idem `sender`).
 
----
+## Daya: cukup dari laptop?
 
-# DAYA: cukup dari laptop atau tidak?
-
-**Sender (ESP32 #1 + 5 sensor): cukup dari USB laptop.** ESP32 dengan WiFi sekitar 150–250 mA, 5 modul sensor sekitar
-100 mA dari pin 3V3. Total ±0,35 A, di bawah 0,5 A yang dijamin port USB.
-
-**Receiver (ESP32 #2 + strip): ESP32-nya dari USB laptop, tapi strip butuh catu 5 V sendiri.** Perkiraan arus 5 strip × 40 LED
-(WS2812B, `LED_BRIGHTNESS` 60/255):
+**Ya, untuk uji ini cukup dari USB laptop**, karena hanya 34 LED. Perkiraan (WS2812B, `LED_BRIGHTNESS` 60/255, 20 mA per warna
+pada kecerahan penuh):
 
 | Beban | Arus kira-kira |
 |---|---|
-| 1 strip merah menyala (40 LED) | ±0,19 A |
-| 1 strip hijau redup (40 LED) | ±0,05 A |
-| Kepala terang (8 LED) | ±0,07 A |
-| LED mati tetap makan ±1 mA/LED (200 LED) | ±0,2 A |
-| ESP32 (WiFi) | ±0,15–0,25 A |
-| **Skenario normal** (1 merah, 3 hijau + kepala) | **±0,9 A** |
-| **Skenario terburuk** (5 strip merah menyala) | **±1,3 A** |
+| 34 LED merah menyala semua (skenario terburuk) | ±0,16 A |
+| Hijau redup + kepala terang (normal) | ±0,05–0,1 A |
+| LED mati (±1 mA/LED) | ±0,03 A |
+| ESP32 receiver (WiFi) | ±0,15–0,25 A |
+| **Total terburuk receiver** | **±0,45 A** (di bawah 0,5 A port USB 2.0) |
+| ESP32 sender + 5 sensor | ±0,35 A |
 
-Port USB laptop hanya menjamin 0,5 A (USB 2.0) atau 0,9 A (USB 3.0); selebihnya tergantung laptop. Dengan beban di atas, ESP32
-bisa reset sendiri (brownout) atau strip berkedip acak. Jadi: **pakai catu 5 V eksternal minimal 2 A (disarankan 3 A)**
-untuk strip, dengan GND disambung ke GND ESP32. ESP32 receiver boleh tetap dari USB laptop.
-
-Boleh dari laptop saja hanya untuk uji singkat: **1–2 strip**, `LED_BRIGHTNESS` diturunkan (mis. 30), atau strip dipotong pendek
-(10–15 LED). Untuk versi 20 jalur (800 LED) catu 5 V 30 A di proposal tetap yang dipakai.
-
-Angka di atas perkiraan dari datasheet WS2812B (20 mA per warna per LED pada kecerahan penuh), bukan hasil ukur.
+Syaratnya `LED_BRIGHTNESS` tetap ≤ 60. Kalau dinaikkan ke 255, merah penuh 34 LED bisa menarik ±0,7 A dan melewati batas USB.
+Kalau ESP32 receiver reset sendiri atau LED berkedip acak, pakai power bank atau catu 5 V ≥ 1 A untuk strip (GND disambung ke ESP32).
+Angka di atas perkiraan dari datasheet, bukan hasil ukur.

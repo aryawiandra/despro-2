@@ -1,12 +1,13 @@
 // WEEK 7 - NAVIGASI DIJKSTRA 5 JALUR (LED STRIP) - RECEIVER (ESP32 #2)
-// 5 strip WS2812B, masing-masing 1 pin data sendiri (STRIPS[]). Terima status jalur dari sender:
+// 5 strip WS2812B, masing-masing 1 pin data sendiri (STRIPS[]). Terima hasil Dijkstra seluruh peta dari
+// sender dan hanya menampilkan jalur yang punya strip di sini:
 //   - jalur kena api (blockedMask)        -> MERAH BERKEDIP
 //   - jalur aman menuju exit (greenMask)  -> HIJAU, nyala sekuensial searah exit (kepala terang berjalan)
 //   - jalur lain                          -> mati
 // Tidak ada paket 2 detik = link putus (titik biru redup di tiap strip).
 //
-// Nomor jalur di STRIPS[] harus sama dengan ACTIVE[] di sender (nomor jalur 1..20 dari graf 20 jalur).
-// Arah data strip = dari node pertama ke node kedua nama jalurnya (mis. #6 "j4-j5" mengalir dari j4 ke j5).
+// Nomor jalur di STRIPS[] adalah nomor jalur di graf 20 jalur (lihat 'edges' di sender). Strip boleh berbeda panjang.
+// Arah data strip = dari node pertama ke node kedua nama jalurnya (mis. #3 "j2-j3" mengalir dari j2 ke j3).
 // Kalau strip dipasang kebalikannya, set reversed = true.
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
@@ -19,21 +20,21 @@
 #define LINK_TIMEOUT_MS   2000
 
 #define ANIMATE           1      // 1 = kepala terang berjalan searah rute, 0 = hijau diam
-#define CHASE_LEN         8      // panjang kepala terang (LED)
-#define CHASE_STEP_MS     12     // makin kecil makin cepat
-#define CHASE_GAP         20     // jeda LED sebelum animasi mengulang
-#define CHASE_UNIT        40     // panjang 1 jalur nominal (LED) untuk menyelaraskan fase animasi antar jalur
+#define CHASE_LEN         3      // panjang kepala terang (LED); strip pendek, jadi kecil
+#define CHASE_STEP_MS     70     // makin kecil makin cepat
+#define CHASE_GAP         4      // jeda LED sebelum animasi mengulang
+#define CHASE_UNIT        8      // panjang 1 jalur nominal (LED) untuk menyelaraskan fase animasi antar jalur
 #define BLINK_MS          400    // lama merah menyala / padam saat berkedip
 
 // Satu baris = satu strip: nomor jalur, pin data (lewat resistor 330 ohm ke DIN), jumlah LED, arah terbalik?
 // Pin aman untuk output: 4, 5, 13, 14, 16-19, 21-23, 25-27, 32, 33.
 struct StripCfg { uint8_t edge; int8_t pin; uint16_t len; bool reversed; };
 const StripCfg STRIPS[NUM_STRIPS] = {
-  {  6,  4, 40, false },   // #6  j4-j5 -> GPIO 4
-  {  7,  5, 40, false },   // #7  j4-j6 -> GPIO 5
-  {  8, 13, 40, false },   // #8  j5-j6 -> GPIO 13
-  { 18, 14, 40, false },   // #18 j4-e2 -> GPIO 14
-  { 19, 16, 40, false }    // #19 j6-e2 -> GPIO 16
+  {  3,  4, 7, false },   // #3  j2-j3  -> GPIO 4,  7 LED
+  { 11,  5, 8, false },   // #11 j7-j9  -> GPIO 5,  8 LED
+  { 15, 13, 8, false },   // #15 j10-j12 -> GPIO 13, 8 LED
+  { 18, 14, 6, false },   // #18 j4-e2  -> GPIO 14, 6 LED
+  { 19, 16, 5, false }    // #19 j6-e2  -> GPIO 16, 5 LED
 };
 
 typedef struct __attribute__((packed)) {

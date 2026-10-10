@@ -157,7 +157,7 @@ struct SafeMap {
 // jarak dan langkah berikutnya menuju exit terdekat untuk tiap node. Lalu dari SETIAP RUANGAN (0..7, lewat
 // junction ROOM_TO_JUNCTION) ditelusuri rute tercepatnya sampai exit; semua jalur yang dilewati menjadi hijau.
 // Rute-rute itu membentuk pohon menuju exit, sehingga arah tiap jalur tidak pernah bertabrakan.
-inline SafeMap computeSafeForest(uint32_t blockedMask, uint8_t roomMask = 0xFF) {
+inline SafeMap computeSafeForest(uint32_t blockedMask) {
   SafeMap m;
   m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
   memset(m.depth, 0, sizeof(m.depth));
@@ -190,7 +190,6 @@ inline SafeMap computeSafeForest(uint32_t blockedMask, uint8_t roomMask = 0xFF) 
   for (int n = 0; n < NUM_NODES; n++) m.next[n] = (int8_t)parent[n];
 
   for (int room = 0; room < 8; room++) {
-    if (!((roomMask >> room) & 1)) continue;                                  // ruangan di luar 5 jalur aktif
     int start = ROOM_TO_JUNCTION[room];
     if (dist[start] >= INF) { m.isolatedMask |= (1U << start); continue; }   // ruangan ini terputus dari semua exit
     m.roomWeight[room] = dist[start] + ROOM_LINK_WEIGHT;
