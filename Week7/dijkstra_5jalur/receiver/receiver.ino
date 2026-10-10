@@ -56,12 +56,11 @@ RoutePacket shared;                      // diisi callback, dibaca loop (dilindu
 volatile unsigned long lastPacketMs = 0;
 uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-// Signature callback berbeda antara Arduino-ESP32 core 3.x dan 2.x
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
-#else
-void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
-#endif
+// Callback ESP-NOW. Argumen pertama berbeda antara Arduino-ESP32 core 2.x (const uint8_t *mac) dan 3.x
+// (const esp_now_recv_info_t *), dan isinya tidak dipakai di sini. Jadi diterima sebagai const void* lalu
+// didaftarkan dengan cast. Sengaja TANPA #if di sekitar fungsi: PlatformIO membuat deklarasi untuk kedua
+// versi dan tipe milik core 3.x tidak ada di core 2.x.
+void onDataRecv(const void *infoOrMac, const uint8_t *data, int len) {
   if (len != sizeof(RoutePacket)) return;
   portENTER_CRITICAL(&mux);
   memcpy(&shared, data, sizeof(shared));
@@ -186,7 +185,7 @@ void setup() {
     Serial.println("ESP-NOW init gagal");
     return;
   }
-  esp_now_register_recv_cb(onDataRecv);
+  esp_now_register_recv_cb(reinterpret_cast<esp_now_recv_cb_t>(onDataRecv));
 
   esp_now_peer_info_t peer = {};                  // peer broadcast, hanya untuk mengirim permintaan data
   memcpy(peer.peer_addr, broadcastMac, 6);
