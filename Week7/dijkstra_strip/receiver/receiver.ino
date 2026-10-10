@@ -1,6 +1,6 @@
 // WEEK 7 - NAVIGASI DIJKSTRA (LED STRIP) - RECEIVER (ESP32 #2)
 // Terima status jalur dari sender dan menyalakan LED strip WS2812B:
-//   - jalur kena api (blockedMask)        -> MERAH
+//   - jalur kena api (blockedMask)        -> MERAH BERKEDIP
 //   - jalur aman menuju exit (greenMask)  -> HIJAU, dengan kepala terang berjalan searah exit (nyala sekuensial)
 //   - jalur lain                          -> mati
 // Beberapa jalur bisa hijau bersamaan (rute tercepat dari tiap ruangan ke exit).
@@ -36,7 +36,8 @@
 #define CHASE_STEP_MS     12     // makin kecil makin cepat
 #define CHASE_GAP         20     // jeda LED sebelum animasi mengulang
 #define CHASE_UNIT        40     // panjang 1 jalur nominal (LED) untuk menyelaraskan fase animasi antar jalur
-#define SHOW_BLOCKED_RED  1      // 1 = jalur kena api merah, 0 = mati
+#define SHOW_BLOCKED_RED  1      // 1 = jalur kena api merah berkedip, 0 = mati
+#define BLINK_MS          400    // lama merah menyala / padam saat berkedip
 
 // Panjang tiap jalur beda-beda; sementara diasumsikan semua 40 LED. Ubah per jalur bila perlu.
 const uint16_t EDGE_LEN[NUM_EDGES] = {
@@ -272,11 +273,12 @@ inline uint16_t travelPixel(uint8_t idx, bool rev, uint16_t k) {
   return backwardInChain ? (EDGE_LEN[idx] - 1 - k) : k;
 }
 
-void render(const RoutePacket &pkt, uint32_t frame) {
+void render(const RoutePacket &pkt, uint32_t frame, bool blinkOn) {
   clearAll();
 
 #if SHOW_BLOCKED_RED
   uint32_t red = rgb(255, 0, 0);
+  if (blinkOn)                                   // merah berkedip: nyala / padam bergantian tiap BLINK_MS
   for (int i = 0; i < NUM_EDGES; i++)
     if ((pkt.blockedMask >> i) & 1)
       for (uint16_t k = 0; k < EDGE_LEN[i]; k++) setPx(i, k, red);
@@ -355,6 +357,7 @@ void loop() {
   static bool havePkt = false;
   static unsigned long lastFrameMs = 0;
   static uint32_t frame = 0;
+  static bool lastBlink = true;
 
   RoutePacket pkt;
   unsigned long lastRx;
@@ -382,9 +385,12 @@ void loop() {
 
   // Render saat ada perubahan, atau tiap CHASE_STEP_MS bila animasi aktif
   bool animate = ANIMATE && pkt.greenMask != 0;
-  if (changed || !lastLink || (animate && millis() - lastFrameMs >= CHASE_STEP_MS)) {
+  bool blinkOn = ((millis() / BLINK_MS) % 2) == 0;
+  bool blinkChanged = SHOW_BLOCKED_RED && pkt.blockedMask != 0 && blinkOn != lastBlink;
+  lastBlink = blinkOn;
+  if (changed || !lastLink || blinkChanged || (animate && millis() - lastFrameMs >= CHASE_STEP_MS)) {
     lastFrameMs = millis();
-    render(pkt, frame++);
+    render(pkt, frame++, blinkOn);
   }
   lastLink = true;
   delay(2);
