@@ -127,47 +127,58 @@ ruangan sudah dicocokkan dengan `Week4/graph-visualizer.png` dan `Week5/kodeInte
 Perintah sender dan cara upload sama seperti `dijkstra_graph` (`room 0`, `block j1-j3`, `reset`, ...).
 Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
 
-## Susunan strip: rantai per pin
+## Susunan strip: satu pin per jalur
 
-Tiap jalur = 1 strip terpisah (`EDGE_LEN[i]` LED, sementara 40). **Data WS2812B hanya mengalir lewat DIN → DOUT**, jadi
-strip yang tidak disambung ke strip lain butuh pin data sendiri. Warna tiap LED ditentukan dari **posisinya di
-rantai**, bukan dari pin: satu pin mengirim data untuk semua LED di rantainya, dan tiap LED mengambil 24 bit
-bagiannya lalu meneruskan sisanya lewat DOUT.
+Tiap jalur = 1 strip terpisah (`EDGE_LEN[i]` LED, sementara 40) dengan **pin data sendiri**, tanpa disambung ke strip lain.
+Warna tiap LED ditentukan dari data yang dikirim ke pin itu (hijau, merah, atau mati), jadi pin = jalur.
 
-Pin ESP32 terbatas (±16 pin output aman, dan max 8 rantai WS2812B lewat RMT), jadi beberapa strip digabung dalam 1 rantai:
-**DOUT strip pertama disambung dengan kabel ke DIN strip kedua**, dan seterusnya (kabel data antar strip; +5V dan GND
-tiap strip disambung ke rel catu). Strip yang digabung tidak harus bersebelahan secara fisik.
+| Jalur | Strip | Pin ESP32 | Jalur | Strip | Pin ESP32 |
+|---|---|---|---|---|---|
+| #1 | j1-j2 | **GPIO 4** | #11 | j7-j9 | **GPIO 23** |
+| #2 | j1-j3 | **GPIO 5** | #12 | j8-j9 | **GPIO 25** |
+| #3 | j2-j3 | **GPIO 13** | #13 | j9-j10 | **GPIO 26** |
+| #4 | j2-j12 | **GPIO 14** | #14 | j10-j11 | **GPIO 27** |
+| #5 | j3-j4 | **GPIO 16** | #15 | j10-j12 | **GPIO 32** |
+| #6 | j4-j5 | **GPIO 17** | #16 | j11-j12 | **GPIO 33** |
+| #7 | j4-j6 | **GPIO 18** | #17 | j2-e1 | **GPIO 15** (pin boot) |
+| #8 | j5-j6 | **GPIO 19** | #18 | j4-e2 | **GPIO 2** (pin boot, LED onboard) |
+| #9 | j6-j7 | **GPIO 21** | #19 | j6-e2 | **GPIO 12** (pin boot) |
+| #10 | j7-j8 | **GPIO 22** | #20 | j12-e3 | **GPIO 0** (pin boot, tombol BOOT) |
 
-Susunan default di `CHAINS[]` (`receiver.ino`), dipilih strip yang bersebelahan secara fisik:
+Tabelnya `EDGE_PIN[]` di `receiver.ino` (indeks = nomor jalur − 1); ganti sesuai pin yang kamu pakai.
 
-| Rantai | Pin ESP32 | Urutan strip (nomor jalur → nama) | LED |
-|---|---|---|---|
-| 1 | **GPIO 4** | #1 j1-j2 → #2 j1-j3 → #3 j2-j3 → #17 j2-e1 | 160 |
-| 2 | **GPIO 13** | #4 j2-j12 → #15 j10-j12 → #16 j11-j12 → #20 j12-e3 | 160 |
-| 3 | **GPIO 14** | #5 j3-j4 → #6 j4-j5 → #7 j4-j6 → #18 j4-e2 | 160 |
-| 4 | **GPIO 16** | #8 j5-j6 → #9 j6-j7 → #10 j7-j8 → #19 j6-e2 | 160 |
-| 5 | **GPIO 17** | #11 j7-j9 → #12 j8-j9 → #13 j9-j10 → #14 j10-j11 | 160 |
-
-- Mau strip lain di pin lain, atau satu strip per pin? Edit `CHAINS[]` (nomor jalur 1–20, tiap jalur tepat 1 kali; kode
-  memeriksa dan menolak konfigurasi yang salah lewat Serial). Pin aman untuk output: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.
+- **Keterbatasan ESP32:** hanya 16 pin output yang bersih (4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33). Empat jalur terakhir
+  terpaksa memakai pin boot (15, 2, 12, 0). Itu aman selama DIN strip tidak menarik pin ke level tinggi saat reset
+  (DIN WS2812B berimpedansi tinggi, ditambah resistor 330 Ω). Kalau **upload gagal** atau ESP32 tidak mau boot,
+  cabut kabel data dari GPIO 0, 2, dan 12 sementara.
+- **Pin yang jangan dipakai:** GPIO 1 dan 3 (USB serial), 6–11 (flash), 34–39 (hanya input). Kode menolak pin yang tidak valid
+  atau ganda dan menampilkan pesan di Serial.
+- **Driver output:** library Adafruit NeoPixel hanya bisa melayani 8 pin sekaligus, jadi file ini memakai driver bit-bang
+  paralel sendiri yang mengirim ke 20 pin serentak (±1,2 ms per update untuk 40 LED, interrupt dimatikan sebentar).
+  Logika bit/pin sudah diuji di PC, tetapi **timing sinyal belum bisa diuji tanpa strip dan ESP32 asli**. Kalau LED berkedip
+  acak atau salah warna, lihat bagian "Kalau LED aneh" di bawah.
+- **Mode cadangan (`OUTPUT_MODE 0`):** strip digabung dalam rantai DOUT → DIN, tiap rantai 1 pin (`CHAINS[]`), memakai
+  library Adafruit (maks 8 rantai). Berguna kalau kekurangan pin.
 - Arah data tiap strip = dari node pertama ke node kedua nama jalurnya (jalur #1 mengalir dari j1 ke j2). Jika strip dipasang
   kebalikannya, set `EDGE_REVERSED[i] = true`; animasi tetap searah rute.
-- Panjang beda tiap jalur: ubah `EDGE_LEN[i]`; panjang rantai dihitung otomatis.
+- Panjang beda tiap jalur: ubah `EDGE_LEN[i]` (maks `MAX_EDGE_LEN` = 64 LED per jalur).
 
 ## Konfigurasi pin dan listrik (receiver)
 
 | Sambungan | Ke |
 |---|---|
-| ESP32 **GPIO 4 / 13 / 14 / 16 / 17** | masing-masing lewat resistor 330 Ω ke **DIN** strip pertama di rantainya (tabel di atas) |
+| ESP32 GPIO sesuai tabel di atas | resistor 330 Ω lalu **DIN** strip jalur yang sesuai (20 kabel data) |
 | ESP32 **GND** | GND semua strip **dan** GND catu 5 V (satu ground) |
-| Catu **5 V** | +5V semua strip (bukan dari pin ESP32) |
-| Kapasitor 1000 µF 6,3 V+ | antara +5V dan GND di catu / awal strip (ESP32 tetap dari USB) |
+| Catu **5 V** | +5V tiap strip, langsung dari rel catu (bukan dari pin ESP32) |
+| Kapasitor 1000 µF 6,3 V+ | antara +5V dan GND di catu (ESP32 tetap dari USB) |
 
-- Antar strip dalam 1 rantai: **DOUT → DIN** (kabel data), dan +5V/GND tiap strip disambung ke rel catu masing-masing.
-- Data 3,3 V dari ESP32 biasanya cukup untuk kabel pendek. Kalau LED berkedip acak/tidak menyala, pasang level shifter
-  (74HCT125/74AHCT125) di tiap jalur data.
+- Data 3,3 V dari ESP32 biasanya cukup untuk kabel pendek. Kalau LED berkedip acak atau salah warna, pasang level shifter
+  (74HCT245 atau 74AHCT125) di jalur data.
 - Catu 5 V 30 A sesuai proposal. Hanya jalur hijau/merah yang menyala dan `LED_BRIGHTNESS` 60/255, jadi arus nyata jauh
-  di bawah 800 LED penuh (±16 A). Sambungkan +5V/GND ke tiap strip langsung dari rel catu (jangan diseri) supaya tegangan tidak jatuh.
+  di bawah 800 LED penuh (±16 A).
+
+**Kalau LED aneh:** (1) pastikan GND catu dan GND ESP32 tersambung; (2) pasang resistor 330 Ω di tiap kabel data;
+(3) coba level shifter 74HCT245; (4) kurangi `LED_BRIGHTNESS`; (5) uji dulu 1 strip di GPIO 4 (jalur #1).
 
 ## Parameter di `receiver.ino`
 
@@ -176,9 +187,9 @@ Susunan default di `CHAINS[]` (`receiver.ino`), dipilih strip yang bersebelahan 
 
 ## Tes cepat dengan 1 strip pendek
 
-Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke **GPIO 4** (rantai 1, strip pertama = jalur #1).
+Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke **GPIO 4** (jalur #1).
 Di sender: `block j1-j3` → jalur #1 (j1>j2) menyala hijau dengan kepala berjalan. `reset` → jalur #1 mati lagi (karena j1>j3
-kembali jadi pilihan terbaik). Jalur #2 (j1-j3) merah hanya terlihat bila strip kedua di rantai itu juga terpasang.
+kembali jadi pilihan terbaik). Jalur #2 (j1-j3) merah hanya terlihat bila strip kedua dipasang di GPIO 5.
 
 Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus); belum diuji di ESP32 asli.
 
@@ -226,14 +237,10 @@ Sensor yang belum dipasang: set `-1` di `SENSOR_PIN[]` untuk jalur itu (tidak di
 
 ## ESP32 #2 — RECEIVER (LED strip)
 
-| Pin ESP32 | Ke |
-|---|---|
-| GPIO 4, 13, 14, 16, 17 | resistor 330 Ω → DIN strip pertama tiap rantai (urutan strip: lihat tabel "Susunan strip: rantai per pin") |
-| GND | GND semua strip dan GND catu 5 V (satu ground) |
-
-Strip: +5V dari catu 5 V (30 A di proposal), kapasitor 1000 µF antara +5V dan GND, tiap strip disambung langsung ke rel
-catu. Dalam 1 rantai: DOUT strip *i* → DIN strip *i+1* sesuai urutan di `CHAINS[]`. Tiap jalur 40 LED
-(`EDGE_LEN[]`, `EDGE_REVERSED[]` bila ada strip terpasang kebalikan). ESP32 receiver cukup dari USB.
+20 strip, **1 pin data per strip** (tabel pin di bagian "Susunan strip: satu pin per jalur"): GPIO → resistor 330 Ω → DIN strip.
+GND ESP32 disambung ke GND semua strip dan GND catu 5 V. Strip dapat +5V langsung dari catu 5 V (30 A di proposal), kapasitor
+1000 µF antara +5V dan GND. Tiap jalur 40 LED (`EDGE_LEN[]`, `EDGE_REVERSED[]` bila ada strip terpasang kebalikan).
+ESP32 receiver cukup dari USB.
 
 ## Input ruangan asal
 
