@@ -277,9 +277,10 @@ rangkaian dan strip asli belum diuji di sesi ini.
 
 ---
 
-# Merah berkedip + hijau sekuensial (`dijkstra_strip/` dan `dijkstra_5jalur/`)
+# Tampilan di versi 5 jalur (`dijkstra_5jalur/`)
 
-Perilaku tampilan di kedua versi:
+Folder `dijkstra_5jalur/` adalah **kode baru khusus uji 5 jalur / 5 pin**. Kode 20 jalur (`dijkstra_strip/`), `dijkstra_graph/`,
+dan `led_biasa_2jalur/` tidak diubah (merah di versi 20 jalur tetap menyala diam, tidak berkedip).
 
 | Kondisi jalur | Tampilan strip |
 |---|---|
@@ -289,7 +290,6 @@ Perilaku tampilan di kedua versi:
 | Link putus > 2 detik | Titik biru redup tiap 10 LED |
 
 Parameter di `receiver.ino`: `BLINK_MS` (kecepatan kedip), `ANIMATE` (0 = hijau diam), `CHASE_LEN`, `CHASE_STEP_MS`.
-Versi 20 jalur sebelum perubahan ini tersimpan di commit `9fffd1a` (`git checkout 9fffd1a`).
 
 ---
 
