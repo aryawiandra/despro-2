@@ -6,17 +6,19 @@
 // Beberapa jalur bisa hijau bersamaan (semua jalan aman yang menuju exit).
 // Tidak ada paket 2 detik = link putus (titik biru redup di tiap jalur).
 //
-// Susunan strip: 20 jalur disambung dalam 1 rantai di LED_DATA_PIN, urutan = nomor jalur 1..20
-// (lihat 'edges' di sender). Tiap jalur panjangnya EDGE_LEN[i] LED (sementara semua 40).
-// Arah rantai tiap jalur = dari node pertama ke node kedua nama jalur (mis. jalur #1 "j1-j2" mengalir
-// dari j1 ke j2). Kalau strip jalur itu terpasang kebalikannya, set EDGE_REVERSED[i] = true.
+// Susunan strip: tiap jalur = 1 strip terpisah (EDGE_LEN[i] LED, sementara semua 40). Data WS2812B hanya
+// mengalir lewat DIN -> DOUT, jadi strip yang tidak disambung butuh pin sendiri. Karena pin ESP32 terbatas,
+// beberapa strip digabung dalam 1 "rantai" (DOUT strip pertama disambung kabel ke DIN strip kedua, dst),
+// lalu tiap rantai diberi 1 pin data. Atur di CHAINS[] di bawah. Warna tiap LED ditentukan dari posisinya
+// di rantai, bukan dari pin.
+// Arah data tiap strip = dari node pertama ke node kedua nama jalurnya (mis. jalur #1 "j1-j2" mengalir
+// dari j1 ke j2). Kalau strip jalur itu dipasang kebalikannya, set EDGE_REVERSED[i] = true.
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 
 #define NUM_EDGES         20
-#define LED_DATA_PIN      5      // pin data strip (lewat resistor 330 ohm)
 #define LED_BRIGHTNESS    60     // 0-255, batasi arus strip
 #define ESPNOW_CHANNEL    1      // harus sama dengan sender
 #define LINK_TIMEOUT_MS   2000
@@ -27,6 +29,22 @@
 #define CHASE_GAP         20     // jeda LED sebelum animasi mengulang
 #define CHASE_UNIT        40     // panjang 1 jalur nominal (LED) untuk menyelaraskan fase animasi antar jalur
 #define SHOW_BLOCKED_RED  1      // 1 = jalur kena api merah, 0 = mati
+
+// ---- Rantai strip ----
+// Tiap baris = 1 pin data ESP32 (lewat resistor 330 ohm) + urutan strip di rantai itu.
+// Isi dengan NOMOR JALUR 1..20 (lihat 'edges' di sender). Urutan = urutan fisik: pin -> DIN strip pertama,
+// DOUT strip pertama -> DIN strip kedua, dst. Setiap jalur harus muncul tepat 1 kali.
+// Maksimal 8 rantai (ESP32 punya 8 kanal RMT untuk WS2812). Pin aman: 4, 5, 13, 14, 16-19, 21-23, 25-27, 32, 33.
+#define NUM_CHAINS        5
+#define MAX_CHAIN_EDGES   8
+struct Chain { int8_t pin; uint8_t count; uint8_t edges[MAX_CHAIN_EDGES]; };
+const Chain CHAINS[NUM_CHAINS] = {
+  {  4, 4, {  1,  2,  3, 17 } },   // j1-j2, j1-j3, j2-j3, j2-e1
+  { 13, 4, {  4, 15, 16, 20 } },   // j2-j12, j10-j12, j11-j12, j12-e3
+  { 14, 4, {  5,  6,  7, 18 } },   // j3-j4, j4-j5, j4-j6, j4-e2
+  { 16, 4, {  8,  9, 10, 19 } },   // j5-j6, j6-j7, j7-j8, j6-e2
+  { 17, 4, { 11, 12, 13, 14 } }    // j7-j9, j8-j9, j9-j10, j10-j11
+};
 
 // Panjang tiap jalur beda-beda; sementara diasumsikan semua 40 LED. Ubah per jalur bila perlu.
 const uint16_t EDGE_LEN[NUM_EDGES] = {
@@ -51,9 +69,15 @@ typedef struct __attribute__((packed)) {
   uint8_t  flags;         // bit0 = tidak ada rute aman
 } RoutePacket;
 
-uint16_t edgeStart[NUM_EDGES];
-uint16_t totalLeds = 0;
-Adafruit_NeoPixel *strip = nullptr;
+Adafruit_NeoPixel *chains[NUM_CHAINS];
+int8_t   edgeChain[NUM_EDGES];     // jalur i ada di rantai ke berapa
+uint16_t edgeStart[NUM_EDGES];     // LED pertama jalur i di dalam rantainya
+bool     configOk = false;
+
+inline uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) { return Adafruit_NeoPixel::Color(r, g, b); }
+inline void setPx(int edge, uint16_t k, uint32_t c) { chains[edgeChain[edge]]->setPixelColor(edgeStart[edge] + k, c); }
+void clearAll() { for (int c = 0; c < NUM_CHAINS; c++) chains[c]->clear(); }
+void showAll()  { for (int c = 0; c < NUM_CHAINS; c++) chains[c]->show(); }
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 RoutePacket shared;                      // diisi callback, dibaca loop (dilindungi mux)
@@ -74,35 +98,36 @@ void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
 
 // ---------- tampilan ----------
 void showLinkLost() {
-  strip->clear();
-  uint32_t blue = strip->Color(0, 0, 60);
+  clearAll();
+  uint32_t blue = rgb(0, 0, 60);
   for (int i = 0; i < NUM_EDGES; i++)
-    for (uint16_t k = 0; k < EDGE_LEN[i]; k += 10) strip->setPixelColor(edgeStart[i] + k, blue);
-  strip->show();
+    for (uint16_t k = 0; k < EDGE_LEN[i]; k += 10) setPx(i, k, blue);
+  showAll();
 }
 
 inline uint8_t depthOf(const RoutePacket &pkt, int i) {
   return (pkt.depth[i / 2] >> ((i & 1) ? 4 : 0)) & 0x0F;
 }
 
-// Pixel ke-k (0..len-1) dari jalur `idx` dalam urutan perjalanan; rev = dilewati dari node kedua ke pertama
+// Pixel ke-k (0..len-1) dari jalur `idx` dalam urutan perjalanan; rev = dilewati dari node kedua ke pertama.
+// Hasil: indeks LED di dalam jalur itu (0 = LED paling dekat DIN strip).
 inline uint16_t travelPixel(uint8_t idx, bool rev, uint16_t k) {
   bool backwardInChain = (rev != EDGE_REVERSED[idx]);
-  return edgeStart[idx] + (backwardInChain ? (EDGE_LEN[idx] - 1 - k) : k);
+  return backwardInChain ? (EDGE_LEN[idx] - 1 - k) : k;
 }
 
 void render(const RoutePacket &pkt, uint32_t frame) {
-  strip->clear();
+  clearAll();
 
 #if SHOW_BLOCKED_RED
-  uint32_t red = strip->Color(255, 0, 0);
+  uint32_t red = rgb(255, 0, 0);
   for (int i = 0; i < NUM_EDGES; i++)
     if ((pkt.blockedMask >> i) & 1)
-      for (uint16_t k = 0; k < EDGE_LEN[i]; k++) strip->setPixelColor(edgeStart[i] + k, red);
+      for (uint16_t k = 0; k < EDGE_LEN[i]; k++) setPx(i, k, red);
 #endif
 
-  uint32_t baseGreen = strip->Color(0, ANIMATE ? 70 : 255, 0);
-  uint32_t headColor = strip->Color(120, 255, 120);
+  uint32_t baseGreen = rgb(0, ANIMATE ? 70 : 255, 0);
+  uint32_t headColor = rgb(120, 255, 120);
 
   // Fase animasi: jalur yang lebih jauh dari exit (depth besar) mulai lebih dulu, sehingga kepala terang
   // mengalir menyusuri jalur berurutan sampai exit. Posisi global q = (depthMax - depth) * CHASE_UNIT + k.
@@ -122,10 +147,10 @@ void render(const RoutePacket &pkt, uint32_t frame) {
       int32_t d = head - (int32_t)(q0 + k);
       if (d >= 0 && d < CHASE_LEN) color = headColor;
 #endif
-      strip->setPixelColor(travelPixel(i, rev, k), color);
+      setPx(i, travelPixel(i, rev, k), color);
     }
   }
-  strip->show();
+  showAll();
 }
 
 void printRoute(const RoutePacket &pkt) {
@@ -145,12 +170,28 @@ void printRoute(const RoutePacket &pkt) {
 void setup() {
   Serial.begin(115200);
 
-  for (int i = 0; i < NUM_EDGES; i++) { edgeStart[i] = totalLeds; totalLeds += EDGE_LEN[i]; }
-  strip = new Adafruit_NeoPixel(totalLeds, LED_DATA_PIN, NEO_GRB + NEO_KHZ800);
-  strip->begin();
-  strip->setBrightness(LED_BRIGHTNESS);
-  strip->clear();
-  strip->show();
+  // Bangun rantai dari CHAINS[] dan periksa tiap jalur muncul tepat 1 kali
+  int seen[NUM_EDGES] = {0};
+  configOk = true;
+  for (int c = 0; c < NUM_CHAINS; c++) {
+    uint16_t len = 0;
+    for (int n = 0; n < CHAINS[c].count; n++) {
+      int e = CHAINS[c].edges[n] - 1;
+      if (e < 0 || e >= NUM_EDGES) { Serial.print("CHAINS salah: nomor jalur tidak valid di rantai "); Serial.println(c); configOk = false; continue; }
+      seen[e]++;
+      edgeChain[e] = c;
+      edgeStart[e] = len;
+      len += EDGE_LEN[e];
+    }
+    chains[c] = new Adafruit_NeoPixel(len, CHAINS[c].pin, NEO_GRB + NEO_KHZ800);
+    chains[c]->begin();
+    chains[c]->setBrightness(LED_BRIGHTNESS);
+    chains[c]->clear();
+    chains[c]->show();
+  }
+  for (int e = 0; e < NUM_EDGES; e++)
+    if (seen[e] != 1) { Serial.print("CHAINS salah: jalur #"); Serial.print(e + 1); Serial.println(seen[e] ? " muncul lebih dari 1 kali" : " belum dipasang di rantai mana pun"); configOk = false; }
+  if (!configOk) { Serial.println("Perbaiki CHAINS[] di receiver.ino lalu upload ulang."); return; }
 
   WiFi.mode(WIFI_STA);
   esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
@@ -161,13 +202,14 @@ void setup() {
   }
   esp_now_register_recv_cb(onDataRecv);
 
-  Serial.print("RECEIVER strip siap, total LED: ");
-  Serial.print(totalLeds);
-  Serial.print(". MAC: ");
+  Serial.print("RECEIVER strip siap, ");
+  Serial.print(NUM_CHAINS);
+  Serial.print(" rantai. MAC: ");
   Serial.println(WiFi.macAddress());
 }
 
 void loop() {
+  if (!configOk) { delay(1000); return; }   // CHAINS[] salah, lihat pesan di Serial
   static bool lastLink = true;
   static RoutePacket lastPkt;
   static bool havePkt = false;

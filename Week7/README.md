@@ -127,37 +127,47 @@ ruangan sudah dicocokkan dengan `Week4/graph-visualizer.png` dan `Week5/kodeInte
 Perintah sender dan cara upload sama seperti `dijkstra_graph` (`room 0`, `block j1-j3`, `reset`, ...).
 Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
 
-## Susunan strip
+## Susunan strip: rantai per pin
 
-20 jalur disambung **1 rantai** di 1 pin data. Urutan rantai = nomor jalur (`edges` di sender), tiap jalur
-`EDGE_LEN[i]` LED (sementara 40 → total 800 LED ≈ 13 m pada 60 LED/m, sesuai 15 m strip di proposal).
+Tiap jalur = 1 strip terpisah (`EDGE_LEN[i]` LED, sementara 40). **Data WS2812B hanya mengalir lewat DIN → DOUT**, jadi
+strip yang tidak disambung ke strip lain butuh pin data sendiri. Warna tiap LED ditentukan dari **posisinya di
+rantai**, bukan dari pin: satu pin mengirim data untuk semua LED di rantainya, dan tiap LED mengambil 24 bit
+bagiannya lalu meneruskan sisanya lewat DOUT.
 
-| # | Jalur | # | Jalur | # | Jalur | # | Jalur |
-|---|---|---|---|---|---|---|---|
-| 1 | j1-j2 | 6 | j4-j5 | 11 | j7-j9 | 16 | j11-j12 |
-| 2 | j1-j3 | 7 | j4-j6 | 12 | j8-j9 | 17 | j2-e1 |
-| 3 | j2-j3 | 8 | j5-j6 | 13 | j9-j10 | 18 | j4-e2 |
-| 4 | j2-j12 | 9 | j6-j7 | 14 | j10-j11 | 19 | j6-e2 |
-| 5 | j3-j4 | 10 | j7-j8 | 15 | j10-j12 | 20 | j12-e3 |
+Pin ESP32 terbatas (±16 pin output aman, dan max 8 rantai WS2812B lewat RMT), jadi beberapa strip digabung dalam 1 rantai:
+**DOUT strip pertama disambung dengan kabel ke DIN strip kedua**, dan seterusnya (kabel data antar strip; +5V dan GND
+tiap strip disambung ke rel catu). Strip yang digabung tidak harus bersebelahan secara fisik.
 
-- Arah rantai tiap jalur = dari node pertama ke node kedua (jalur #1 mengalir dari j1 ke j2). Jika strip jalur itu
-  terpasang kebalikannya, set `EDGE_REVERSED[i] = true` di `receiver.ino`; animasi tetap searah rute.
-- Antar-jalur: DOUT strip jalur *i* disambung ke DIN strip jalur *i+1* dengan kabel (jalur tidak harus bersebelahan secara fisik).
-- Panjang beda tiap jalur: ubah `EDGE_LEN[i]`. Total LED dihitung otomatis.
+Susunan default di `CHAINS[]` (`receiver.ino`), dipilih strip yang bersebelahan secara fisik:
+
+| Rantai | Pin ESP32 | Urutan strip (nomor jalur → nama) | LED |
+|---|---|---|---|
+| 1 | **GPIO 4** | #1 j1-j2 → #2 j1-j3 → #3 j2-j3 → #17 j2-e1 | 160 |
+| 2 | **GPIO 13** | #4 j2-j12 → #15 j10-j12 → #16 j11-j12 → #20 j12-e3 | 160 |
+| 3 | **GPIO 14** | #5 j3-j4 → #6 j4-j5 → #7 j4-j6 → #18 j4-e2 | 160 |
+| 4 | **GPIO 16** | #8 j5-j6 → #9 j6-j7 → #10 j7-j8 → #19 j6-e2 | 160 |
+| 5 | **GPIO 17** | #11 j7-j9 → #12 j8-j9 → #13 j9-j10 → #14 j10-j11 | 160 |
+
+- Mau strip lain di pin lain, atau satu strip per pin? Edit `CHAINS[]` (nomor jalur 1–20, tiap jalur tepat 1 kali; kode
+  memeriksa dan menolak konfigurasi yang salah lewat Serial). Pin aman untuk output: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.
+- Arah data tiap strip = dari node pertama ke node kedua nama jalurnya (jalur #1 mengalir dari j1 ke j2). Jika strip dipasang
+  kebalikannya, set `EDGE_REVERSED[i] = true`; animasi tetap searah rute.
+- Panjang beda tiap jalur: ubah `EDGE_LEN[i]`; panjang rantai dihitung otomatis.
 
 ## Konfigurasi pin dan listrik (receiver)
 
 | Sambungan | Ke |
 |---|---|
-| ESP32 **GPIO 5** | resistor 330 Ω → **DIN** strip jalur #1 (awal rantai) |
-| ESP32 **GND** | GND strip **dan** GND power supply (harus satu ground) |
-| Power supply **5 V** | +5V strip (bukan dari pin 5V ESP32) |
-| Kapasitor 1000 µF 6,3 V+ | antara +5V dan GND di awal strip (ESP32 tetap dari USB) |
+| ESP32 **GPIO 4 / 13 / 14 / 16 / 17** | masing-masing lewat resistor 330 Ω ke **DIN** strip pertama di rantainya (tabel di atas) |
+| ESP32 **GND** | GND semua strip **dan** GND catu 5 V (satu ground) |
+| Catu **5 V** | +5V semua strip (bukan dari pin ESP32) |
+| Kapasitor 1000 µF 6,3 V+ | antara +5V dan GND di catu / awal strip (ESP32 tetap dari USB) |
 
-- Strip WS2812B dikendalikan data 5 V; data 3,3 V dari ESP32 biasanya cukup untuk kabel pendek. Kalau LED
-  berkedip acak/tidak menyala, pasang level shifter (74HCT125/74AHCT125) di jalur data.
-- Catu 5 V 30 A sesuai proposal. Hanya jalur rute yang menyala dan `LED_BRIGHTNESS` 60/255, jadi arus nyata jauh
-  di bawah 800 LED penuh (±16 A). Suntik daya +5V/GND ke strip tiap beberapa jalur supaya tegangan tidak jatuh di ujung.
+- Antar strip dalam 1 rantai: **DOUT → DIN** (kabel data), dan +5V/GND tiap strip disambung ke rel catu masing-masing.
+- Data 3,3 V dari ESP32 biasanya cukup untuk kabel pendek. Kalau LED berkedip acak/tidak menyala, pasang level shifter
+  (74HCT125/74AHCT125) di tiap jalur data.
+- Catu 5 V 30 A sesuai proposal. Hanya jalur hijau/merah yang menyala dan `LED_BRIGHTNESS` 60/255, jadi arus nyata jauh
+  di bawah 800 LED penuh (±16 A). Sambungkan +5V/GND ke tiap strip langsung dari rel catu (jangan diseri) supaya tegangan tidak jatuh.
 
 ## Parameter di `receiver.ino`
 
@@ -166,9 +176,9 @@ Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
 
 ## Tes cepat dengan 1 strip pendek
 
-Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke GPIO 5 sebagai jalur #1 (awal rantai).
-Di sender: `block j1-j3` → jalur #1 (j1>j2) menyala hijau dengan kepala berjalan (jalur #2 yang di LED 41–80 merah bila
-terpasang). `reset` → jalur #1 mati lagi (karena j1>j3 kembali jadi pilihan terbaik).
+Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke **GPIO 4** (rantai 1, strip pertama = jalur #1).
+Di sender: `block j1-j3` → jalur #1 (j1>j2) menyala hijau dengan kepala berjalan. `reset` → jalur #1 mati lagi (karena j1>j3
+kembali jadi pilihan terbaik). Jalur #2 (j1-j3) merah hanya terlihat bila strip kedua di rantai itu juga terpasang.
 
 Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus); belum diuji di ESP32 asli.
 
@@ -218,11 +228,11 @@ Sensor yang belum dipasang: set `-1` di `SENSOR_PIN[]` untuk jalur itu (tidak di
 
 | Pin ESP32 | Ke |
 |---|---|
-| GPIO 5 | resistor 330 Ω → DIN strip jalur #1 (awal rantai) |
-| GND | GND strip dan GND catu 5 V (satu ground) |
+| GPIO 4, 13, 14, 16, 17 | resistor 330 Ω → DIN strip pertama tiap rantai (urutan strip: lihat tabel "Susunan strip: rantai per pin") |
+| GND | GND semua strip dan GND catu 5 V (satu ground) |
 
-Strip: +5V dari catu 5 V (30 A di proposal), kapasitor 1000 µF antara +5V dan GND di awal strip, suntik +5V/GND
-tiap beberapa jalur. Rantai: DOUT jalur *i* → DIN jalur *i+1*, urut #1–#20, tiap jalur 40 LED
+Strip: +5V dari catu 5 V (30 A di proposal), kapasitor 1000 µF antara +5V dan GND, tiap strip disambung langsung ke rel
+catu. Dalam 1 rantai: DOUT strip *i* → DIN strip *i+1* sesuai urutan di `CHAINS[]`. Tiap jalur 40 LED
 (`EDGE_LEN[]`, `EDGE_REVERSED[]` bila ada strip terpasang kebalikan). ESP32 receiver cukup dari USB.
 
 ## Input ruangan asal
