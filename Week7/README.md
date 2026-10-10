@@ -119,10 +119,10 @@ Panjang tiap jalur beda-beda, sementara diasumsikan **40 LED** (`EDGE_LEN[]` di 
 Versi untuk **LED strip addressable** (pengganti `dijkstra_graph` yang LED biasa). Graf, bobot, dan mapping
 ruangan sudah dicocokkan dengan `Week4/graph-visualizer.png` dan `Week5/kodeIntegrasi.cpp` (20 jalur identik).
 
-- `sender/` — sama seperti `dijkstra_graph` (perintah teks, Dijkstra di `graph.h`), tapi paketnya membawa
-  **urutan jalur dari ruangan ke exit + arahnya**.
-- `receiver/` — jalur rute **hijau**, dengan kepala terang yang berjalan searah rute (nyala sekuensial,
-  sesuai proposal). Jalur lain mati. Link putus: titik biru redup tiap 10 LED.
+- `sender/` — baca sensor, Dijkstra di `graph.h`. Jalur yang kena api **merah**; **semua jalur aman yang menuju exit
+  hijau** (tiap junction dipandu ke exit terdekatnya, jadi beberapa jalur hijau bersamaan); jalur lain mati.
+- `receiver/` — jalur hijau dengan kepala terang yang mengalir searah exit (nyala sekuensial, sesuai proposal).
+  Link putus: titik biru redup tiap 10 LED.
 
 Perintah sender dan cara upload sama seperti `dijkstra_graph` (`room 0`, `block j1-j3`, `reset`, ...).
 Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
@@ -167,8 +167,8 @@ Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
 ## Tes cepat dengan 1 strip pendek
 
 Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke GPIO 5 sebagai jalur #1 (awal rantai).
-Di sender: `room 0`, lalu `block j1-j3` → rute pindah ke j1>j2>e1 sehingga jalur #1 menyala hijau dengan kepala berjalan
-(jalur #17 ada di LED 641–680, tidak terlihat). `reset` → jalur #1 mati lagi.
+Di sender: `block j1-j3` → jalur #1 (j1>j2) menyala hijau dengan kepala berjalan (jalur #2 yang di LED 41–80 merah bila
+terpasang). `reset` → jalur #1 mati lagi (karena j1>j3 kembali jadi pilihan terbaik).
 
 Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus); belum diuji di ESP32 asli.
 
@@ -234,8 +234,11 @@ tiap beberapa jalur. Rantai: DOUT jalur *i* → DIN jalur *i+1*, urut #1–#20, 
 
 ## Input ruangan asal
 
-Sensor hanya memberi tahu **jalur mana yang kena api**. Dari ruangan mana orang dipandu ditentukan lewat
-`room N` di Serial Monitor sender (default `DEFAULT_ROOM` di `sender.ino`). Ruangan 0,1 → j1; 2,3 → j5; 4,5 → j8; 6,7 → j11.
+Default (`room all`): semua junction dipandu ke exit terdekatnya sekaligus, jadi tidak perlu memilih ruangan —
+12 jalur hijau saat aman, dan berubah otomatis saat ada api. Untuk melihat rute satu ruangan saja: `room N`
+(0,1 → j1; 2,3 → j5; 4,5 → j8; 6,7 → j11) atau `start j5`; `room all` kembali ke default.
+Ubah default lewat `DEFAULT_SHOW_ALL` di `sender.ino`. Junction yang terputus dari semua exit dicetak di Serial
+(`Junction TERPUTUS dari exit`).
 
 ## Upload dan jalankan
 
@@ -252,9 +255,10 @@ sensor `block j1-j3` / `clear j1-j3` / `reset`.
 1. **Sensor:** ketik `sensors` di monitor sender. Semua jalur harus `aman`. Dekatkan api ke satu sensor: baris jalur itu
    jadi `API` dan monitor menampilkan `[SENSOR] api di: ...`. Kalau ada jalur yang `API` padahal tidak ada api: cek pull-up
    10 kΩ, polaritas `SENSOR_ACTIVE_LEVEL`, atau channel yang salah sambung.
-2. **Rute:** `room 0` lalu dekatkan api ke sensor j1-j3 → rute berpindah ke j1>j2>e1 dalam < 1 detik.
-3. **Receiver:** jalur rute hijau dengan kepala terang berjalan dari ruangan menuju exit; jalur lain mati.
-4. **Semua tertutup:** api di semua jalan keluar → `[BAHAYA]` di sender dan semua strip mati.
+2. **Rute:** tanpa api, 12 jalur hijau (j1>j3, j3>j2, j2>e1, j4>e2, ...). Dekatkan api ke sensor j1-j3 → jalur #2 **merah**
+   dan j1 berpindah ke j1>j2 (hijau) dalam < 1 detik.
+3. **Receiver:** jalur hijau dengan kepala terang mengalir menuju exit; jalur api merah; jalur lain mati.
+4. **Semua tertutup:** api di semua jalan keluar (j2-e1, j4-e2, j6-e2, j12-e3) → `[BAHAYA]` di sender, tidak ada jalur hijau, jalur api merah.
 5. **Link putus:** cabut sender > 2 detik → receiver menampilkan titik biru redup di tiap jalur.
 
 Logic (Dijkstra, scan + debounce sensor, pemetaan mux ke jalur, render receiver) sudah diuji di PC dengan mock;

@@ -1,13 +1,17 @@
 // WEEK 7 - NAVIGASI DIJKSTRA (LED STRIP) - SENDER (ESP32 #1)
 // Graf 15 node / 20 jalur (lihat graph.h). Tiap jalur punya 1 sensor api (20 sensor, dibaca lewat
 // 2 multiplexer CD74HC4067, sama seperti Week5). Sensor juga bisa disimulasikan lewat teks di
-// Serial Monitor; hasil keduanya digabung (OR). Tiap ada perubahan, sender menjalankan Dijkstra
-// dari ruangan asal ke exit terdekat (jalur kena api dibuang), lalu mengirim jalur terpilih
-// ke receiver lewat ESP-NOW, berurutan dari ruangan ke exit lengkap dengan arahnya, supaya
-// receiver bisa menyalakan LED strip hijau dan menjalankan nyala sekuensial searah rute.
+// Serial Monitor; hasil keduanya digabung (OR). Jalur yang kena api dibuang dari graf, lalu Dijkstra
+// dihitung ke exit terdekat dan hasilnya dikirim ke receiver lewat ESP-NOW:
+//   - jalur kena api            -> MERAH
+//   - jalur aman menuju exit    -> HIJAU, dengan nyala sekuensial searah exit
+//   - jalur lain                -> mati
+// Mode default "room all": SEMUA junction dipandu ke exit terdekatnya sekaligus, jadi beberapa jalur
+// bisa hijau bersamaan. "room N" / "start j5" hanya menampilkan rute satu ruangan/node.
 //
 // Perintah (Serial Monitor 115200, line ending "Newline"):
-//   room <0-7>        -> pilih ruangan asal (0,1=j1  2,3=j5  4,5=j8  6,7=j11)
+//   room all          -> semua jalur aman menuju exit menyala hijau (default)
+//   room <0-7>        -> hanya rute satu ruangan (0,1=j1  2,3=j5  4,5=j8  6,7=j11)
 //   start <node>      -> atau langsung pilih node asal, mis. start j5
 //   block <jalur>     -> simulasi api di jalur, mis. block j1-j2   atau   block 1
 //   clear <jalur>     -> padamkan simulasi, mis. clear j1-j2
@@ -39,23 +43,25 @@
 
 uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // broadcast: tidak perlu MAC receiver
 
-#define MAX_ROUTE_EDGES 15
-
 typedef struct __attribute__((packed)) {
-  uint8_t  count;                    // jumlah jalur di rute (0 = tidak ada)
-  uint8_t  seq[MAX_ROUTE_EDGES];     // urut dari start ke exit: bit0-6 = indeks jalur, bit7 = 1 jika dilewati v -> u
-  uint32_t blockedMask;              // bit i = jalur i kena api
-  uint8_t  flags;                    // bit0 = tidak ada rute aman
+  uint32_t greenMask;     // bit i = jalur i hijau (aman, menuju exit)
+  uint32_t blockedMask;   // bit i = jalur i kena api (merah)
+  uint32_t revMask;       // bit i = arah menuju exit melewati jalur i dari node v ke u
+  uint8_t  depth[10];     // 2 jalur per byte (4 bit): jumlah jalur dari ujung awal jalur ini sampai exit
+  uint8_t  flags;         // bit0 = tidak ada rute aman sama sekali
 } RoutePacket;
 
-#define DEFAULT_ROOM        0    // ruangan asal saat menyala (0-7); bisa diganti kapan saja dengan 'room N'
+#define DEFAULT_SHOW_ALL    1    // 1 = semua jalur aman menuju exit hijau; 0 = hanya rute DEFAULT_ROOM
+#define DEFAULT_ROOM        0    // ruangan asal bila DEFAULT_SHOW_ALL = 0 (atau setelah 'room N')
 
+bool showAll = DEFAULT_SHOW_ALL;
 int startRoom = DEFAULT_ROOM;
 int startNode = ROOM_TO_JUNCTION[DEFAULT_ROOM];
 uint32_t simMask = 0;      // api dari teks Serial (simulasi)
 uint32_t sensorMask = 0;   // api dari sensor asli (sudah di-debounce)
 uint32_t blockedMask = 0;  // gabungan keduanya, dipakai Dijkstra
-RouteResult route;
+RouteResult route;         // rute satu ruangan (mode 'room N')
+SafeMap safe;              // hasil akhir yang dikirim ke receiver
 unsigned long lastSendMs = 0;
 unsigned long lastScanMs = 0;
 
@@ -109,13 +115,11 @@ bool scanSensors() {
 void sendRoute() {
   RoutePacket pkt;
   memset(&pkt, 0, sizeof(pkt));
-  if (route.found) {
-    pkt.count = route.numEdges;
-    for (int i = 0; i < route.numEdges; i++)
-      pkt.seq[i] = (uint8_t)route.edgeSeq[i] | (route.edgeRev[i] ? 0x80 : 0);
-  }
+  pkt.greenMask = safe.greenMask;
   pkt.blockedMask = blockedMask;
-  pkt.flags = route.found ? 0 : 1;
+  pkt.revMask = safe.revMask;
+  for (int i = 0; i < NUM_EDGES; i++) pkt.depth[i / 2] |= (safe.depth[i] & 0x0F) << ((i & 1) ? 4 : 0);
+  pkt.flags = (safe.numGreen == 0) ? 1 : 0;
   esp_err_t res = esp_now_send(broadcastMac, (uint8_t *)&pkt, sizeof(pkt));
   if (res != ESP_OK) Serial.println("SEND ERROR");
 }
@@ -126,12 +130,23 @@ void printEdgeName(int i) {
   Serial.print(NODE_NAMES[EDGES[i].v]);
 }
 
+void printNodeList(uint16_t mask) {
+  bool any = false;
+  for (int n = 0; n < 12; n++)
+    if ((mask >> n) & 1) { if (any) Serial.print(", "); Serial.print(NODE_NAMES[n]); any = true; }
+  if (!any) Serial.print("-");
+}
+
 void printRoute() {
-  Serial.print("Asal: ");
-  if (startRoom >= 0) { Serial.print("ruang "); Serial.print(startRoom); Serial.print(" ("); }
-  Serial.print(NODE_NAMES[startNode]);
-  if (startRoom >= 0) Serial.print(")");
-  Serial.print(" | jalur terblokir: ");
+  Serial.print("Mode: ");
+  if (showAll) Serial.print("semua jalur aman");
+  else {
+    Serial.print("rute ");
+    if (startRoom >= 0) { Serial.print("ruang "); Serial.print(startRoom); Serial.print(" ("); }
+    Serial.print(NODE_NAMES[startNode]);
+    if (startRoom >= 0) Serial.print(")");
+  }
+  Serial.print(" | MERAH (api): ");
   bool any = false;
   for (int i = 0; i < NUM_EDGES; i++) {
     if ((blockedMask >> i) & 1) { if (any) Serial.print(", "); printEdgeName(i); any = true; }
@@ -139,24 +154,31 @@ void printRoute() {
   if (!any) Serial.print("-");
   Serial.println();
 
-  if (!route.found) {
+  if (safe.numGreen == 0) {
     Serial.println("[BAHAYA] Tidak ada rute aman ke exit");
     return;
   }
-  Serial.print("Rute -> ");
-  Serial.print(NODE_NAMES[route.exitNode]);
-  Serial.print(" (bobot ");
-  Serial.print(route.totalWeight);
-  Serial.print("): ");
-  for (int i = 0; i < route.numNodes; i++) {
-    if (i) Serial.print(" > ");
-    Serial.print(NODE_NAMES[route.nodes[i]]);
-  }
-  Serial.print("  | LED hijau jalur #: ");
+  Serial.print("HIJAU (menuju exit): ");
+  any = false;
   for (int i = 0; i < NUM_EDGES; i++) {
-    if ((route.pathMask >> i) & 1) { Serial.print(i + 1); Serial.print(" "); }
+    if (!((safe.greenMask >> i) & 1)) continue;
+    bool rev = (safe.revMask >> i) & 1;
+    if (any) Serial.print(", ");
+    Serial.print(NODE_NAMES[rev ? EDGES[i].v : EDGES[i].u]);
+    Serial.print(">");
+    Serial.print(NODE_NAMES[rev ? EDGES[i].u : EDGES[i].v]);
+    any = true;
   }
   Serial.println();
+  if (showAll && safe.isolatedMask) {
+    Serial.print("Junction TERPUTUS dari exit: ");
+    printNodeList(safe.isolatedMask);
+    Serial.println();
+  }
+  if (!showAll && route.found) {
+    Serial.print("Rute -> "); Serial.print(NODE_NAMES[route.exitNode]);
+    Serial.print(" (bobot "); Serial.print(route.totalWeight); Serial.println(")");
+  }
 }
 
 void printEdges() {
@@ -166,13 +188,13 @@ void printEdges() {
     Serial.print("  bobot "); Serial.print(EDGES[i].weight);
     if ((sensorMask >> i) & 1) Serial.print("  API(sensor)");
     if ((simMask >> i) & 1) Serial.print("  API(teks)");
-    if (route.found && ((route.pathMask >> i) & 1)) Serial.print("  RUTE");
+    if ((safe.greenMask >> i) & 1) Serial.print("  HIJAU");
     Serial.println();
   }
 }
 
 void printHelp() {
-  Serial.println("Perintah: room <0-7> | start <node> | block <jalur> | clear <jalur> | reset | edges | sensors | list | help");
+  Serial.println("Perintah: room all | room <0-7> | start <node> | block <jalur> | clear <jalur> | reset | edges | sensors | list | help");
   Serial.println("Jalur: nama 'j1-j2' atau nomor 1-20 (lihat 'edges')");
 }
 
@@ -205,9 +227,18 @@ void printSensors() {
 #endif
 }
 
-void recompute() {
+void compute() {
   blockedMask = simMask | sensorMask;
-  route = computeRoute(startNode, blockedMask);
+  if (showAll) {
+    safe = computeSafeForest(blockedMask);
+  } else {
+    route = computeRoute(startNode, blockedMask);
+    safe = routeToSafeMap(route);
+  }
+}
+
+void recompute() {
+  compute();
   printRoute();
   sendRoute();
 }
@@ -223,13 +254,19 @@ void handleCommand(String line) {
   arg.trim();
 
   if (cmd == "room" || cmd == "r") {
-    int n = arg.toInt();
-    if (arg.length() == 0 || n < 0 || n > 7) { Serial.println("Pakai: room 0-7"); return; }
-    startRoom = n;
-    startNode = ROOM_TO_JUNCTION[n];
+    if (arg == "all") {
+      showAll = true;
+    } else {
+      int n = arg.toInt();
+      if (arg.length() == 0 || n < 0 || n > 7) { Serial.println("Pakai: room all | room 0-7"); return; }
+      showAll = false;
+      startRoom = n;
+      startNode = ROOM_TO_JUNCTION[n];
+    }
   } else if (cmd == "start" || cmd == "s") {
     int n = nodeIndex(arg.c_str());
     if (n < 0 || n >= 12) { Serial.println("Node asal harus j1..j12"); return; }
+    showAll = false;
     startRoom = -1;
     startNode = n;
   } else if (cmd == "block" || cmd == "b" || cmd == "clear" || cmd == "c") {
@@ -283,8 +320,7 @@ void setup() {
   Serial.print("SENDER Dijkstra siap. MAC: ");
   Serial.println(WiFi.macAddress());
   printHelp();
-  blockedMask = simMask | sensorMask;
-  route = computeRoute(startNode, blockedMask);
+  compute();
   printRoute();
 }
 

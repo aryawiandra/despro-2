@@ -136,3 +136,72 @@ inline RouteResult computeRoute(int startNode, uint32_t blockedMask) {
   }
   return r;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Peta jalur aman untuk LED strip: jalur terblokir -> merah, jalur aman yang menuju exit -> hijau.
+// ---------------------------------------------------------------------------------------------
+struct SafeMap {
+  uint32_t greenMask;       // bit i = jalur i dilewati rute aman ke exit
+  uint32_t revMask;         // bit i = arah menuju exit melewati jalur i dari node v ke u (kebalikan tabel EDGES)
+  uint8_t  depth[NUM_EDGES];// jumlah jalur dari ujung awal jalur ini sampai exit (1 = jalur menempel ke exit)
+  int      numGreen;
+  uint16_t isolatedMask;    // bit n = junction n (0..11) tidak punya rute aman ke exit mana pun
+};
+
+// Dijkstra multi-sumber dari SEMUA exit sekaligus (graf tak berarah, jalur terblokir dibuang).
+// Tiap junction yang masih terhubung ke exit menyalakan 1 jalur: langkah pertama menuju exit terdekatnya.
+// Hasilnya pohon rute menuju exit, sehingga arah tiap jalur tidak pernah bertabrakan.
+inline SafeMap computeSafeForest(uint32_t blockedMask) {
+  SafeMap m;
+  m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
+  memset(m.depth, 0, sizeof(m.depth));
+
+  int dist[NUM_NODES], parent[NUM_NODES], hops[NUM_NODES];
+  bool visited[NUM_NODES];
+  for (int i = 0; i < NUM_NODES; i++) { dist[i] = INF; parent[i] = -1; hops[i] = 0; visited[i] = false; }
+  for (int i = 0; i < NUM_EXITS; i++) dist[EXIT_NODES[i]] = 0;
+
+  for (int count = 0; count < NUM_NODES; count++) {
+    int u = -1, best = INF;
+    for (int i = 0; i < NUM_NODES; i++)
+      if (!visited[i] && dist[i] < best) { best = dist[i]; u = i; }
+    if (u == -1) break;
+    visited[u] = true;
+    for (int e = 0; e < NUM_EDGES; e++) {
+      if ((blockedMask >> e) & 1) continue;
+      int v = -1;
+      if (EDGES[e].u == u) v = EDGES[e].v; else if (EDGES[e].v == u) v = EDGES[e].u; else continue;
+      if (!visited[v] && dist[u] + EDGES[e].weight < dist[v]) {
+        dist[v] = dist[u] + EDGES[e].weight;
+        parent[v] = u;
+        hops[v] = hops[u] + 1;
+      }
+    }
+  }
+
+  for (int n = 0; n < 12; n++) {           // junction j1..j12
+    if (dist[n] >= INF || parent[n] < 0) { m.isolatedMask |= (1U << n); continue; }
+    int idx = findEdgeIndex(n, parent[n]);
+    m.greenMask |= (1UL << idx);
+    if (EDGES[idx].v == n) m.revMask |= (1UL << idx);   // berangkat dari v -> u
+    m.depth[idx] = (uint8_t)hops[n];
+    m.numGreen++;
+  }
+  return m;
+}
+
+// Rute satu ruangan (RouteResult dari computeRoute) dalam format SafeMap yang sama.
+inline SafeMap routeToSafeMap(const RouteResult &r) {
+  SafeMap m;
+  m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
+  memset(m.depth, 0, sizeof(m.depth));
+  if (!r.found) return m;
+  for (int k = 0; k < r.numEdges; k++) {
+    int idx = r.edgeSeq[k];
+    m.greenMask |= (1UL << idx);
+    if (r.edgeRev[k]) m.revMask |= (1UL << idx);
+    m.depth[idx] = (uint8_t)(r.numEdges - k);
+    m.numGreen++;
+  }
+  return m;
+}
