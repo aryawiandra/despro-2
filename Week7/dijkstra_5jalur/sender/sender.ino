@@ -27,7 +27,15 @@
 #include "graph.h"
 
 #define ESPNOW_CHANNEL    1
-#define SEND_INTERVAL_MS  200   // heartbeat; receiver menganggap link putus jika 2 detik tanpa paket
+// Pengiriman berbasis kejadian: sender TIDAK mengirim terus-menerus. Paket hanya dikirim saat ada perubahan
+// (sensor / perintah teks), saat boot, dan saat receiver meminta data (receiver baru menyala).
+// ESP-NOW broadcast tidak ada ACK, jadi tiap pengiriman diulang SEND_REPEATS kali berselang SEND_REPEAT_MS.
+#define SEND_REPEATS      3
+#define SEND_REPEAT_MS    100
+#define HEARTBEAT_MS      0     // 0 = tidak ada kirim berkala. >0 = kirim ulang tiap N ms (hanya jika receiver
+                                // juga diberi LINK_TIMEOUT_MS > HEARTBEAT_MS untuk deteksi link putus)
+#define REQUEST_MAGIC     0xA5  // paket 1 byte dari receiver: "kirim status sekarang"
+#define SEND_ERROR_PRINT_MS 5000 // pesan SEND ERROR dibatasi 1x per 5 detik
 
 // ---- Sensor api: hanya 5 jalur yang punya sensor asli, tiap sensor langsung ke 1 pin GPIO ----
 #define USE_SENSORS         1
@@ -83,6 +91,9 @@ uint32_t blockedMask = 0;  // gabungan keduanya, dipakai Dijkstra
 RouteResult route;         // rute satu ruangan (mode 'room N')
 SafeMap safe;              // hasil akhir yang dikirim ke receiver
 unsigned long lastSendMs = 0;
+uint8_t       pendingSends = 0;      // sisa pengiriman ulang
+unsigned long nextSendMs = 0;
+volatile bool requestFlag = false;   // diisi callback saat receiver meminta data
 unsigned long lastScanMs = 0;
 
 // ---------- sensor ----------
@@ -135,7 +146,26 @@ void sendRoute() {
   for (int i = 0; i < NUM_EDGES; i++) pkt.depth[i / 2] |= (safe.depth[i] & 0x0F) << ((i & 1) ? 4 : 0);
   pkt.flags = (safe.numGreen == 0) ? 1 : 0;
   esp_err_t res = esp_now_send(broadcastMac, (uint8_t *)&pkt, sizeof(pkt));
-  if (res != ESP_OK) Serial.println("SEND ERROR");
+  static unsigned long lastErrMs = 0;
+  if (res != ESP_OK && (lastErrMs == 0 || millis() - lastErrMs >= SEND_ERROR_PRINT_MS)) {
+    lastErrMs = millis();
+    Serial.print("SEND ERROR (kode "); Serial.print((int)res); Serial.println(")");
+  }
+}
+
+// Jadwalkan pengiriman (diulang SEND_REPEATS kali). Dipanggil saat ada perubahan, bukan terus-menerus.
+void requestSend() {
+  pendingSends = SEND_REPEATS;
+  nextSendMs = 0;
+}
+
+// Receiver meminta status (mis. baru menyala): jawab dengan pengiriman terjadwal
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+#else
+void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
+#endif
+  if (len == 1 && data[0] == REQUEST_MAGIC) requestFlag = true;
 }
 
 void printEdgeName(int i) {
@@ -273,7 +303,7 @@ void compute() {
 void recompute() {
   compute();
   printRoute();
-  sendRoute();
+  requestSend();
 }
 
 void handleCommand(String line) {
@@ -348,6 +378,8 @@ void setup() {
     Serial.println("Gagal add peer");
   }
 
+  esp_now_register_recv_cb(onDataRecv);
+
   sensorsInit();
 
   Serial.print("SENDER Dijkstra siap. MAC: ");
@@ -355,6 +387,7 @@ void setup() {
   printHelp();
   compute();
   printRoute();
+  requestSend();            // kirim status awal (diulang beberapa kali), setelah itu diam sampai ada perubahan
 }
 
 void loop() {
@@ -373,8 +406,18 @@ void loop() {
     }
   }
 
-  if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
+  if (requestFlag) { requestFlag = false; requestSend(); }
+
+  if (pendingSends > 0 && millis() >= nextSendMs) {   // pengiriman ulang bergantian, bukan loop terus-menerus
+    sendRoute();
+    pendingSends--;
+    nextSendMs = millis() + SEND_REPEAT_MS;
+  }
+
+#if HEARTBEAT_MS > 0
+  if (millis() - lastSendMs >= HEARTBEAT_MS) {
     lastSendMs = millis();
     sendRoute();
   }
+#endif
 }

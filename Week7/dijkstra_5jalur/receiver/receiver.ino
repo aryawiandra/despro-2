@@ -17,7 +17,10 @@
 #define NUM_STRIPS        5
 #define LED_BRIGHTNESS    60     // 0-255, batasi arus strip
 #define ESPNOW_CHANNEL    1      // harus sama dengan sender
-#define LINK_TIMEOUT_MS   2000
+#define LINK_TIMEOUT_MS   0      // 0 = tanpa deteksi link putus (sender tidak mengirim berkala). Jika >0, isi lebih
+                                 // besar dari HEARTBEAT_MS di sender (mis. HEARTBEAT_MS 1000, LINK_TIMEOUT_MS 3500)
+#define REQUEST_MAGIC     0xA5   // paket 1 byte ke sender: "kirim status sekarang"
+#define REQUEST_MS        1500   // minta data tiap N ms, hanya selama belum ada data dari sender
 
 #define ANIMATE           1      // 1 = kepala terang berjalan searah rute, 0 = hijau diam
 #define CHASE_LEN         3      // panjang kepala terang (LED); strip pendek, jadi kecil
@@ -51,6 +54,7 @@ bool configOk = false;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 RoutePacket shared;                      // diisi callback, dibaca loop (dilindungi mux)
 volatile unsigned long lastPacketMs = 0;
+uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // Signature callback berbeda antara Arduino-ESP32 core 3.x dan 2.x
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -184,6 +188,12 @@ void setup() {
   }
   esp_now_register_recv_cb(onDataRecv);
 
+  esp_now_peer_info_t peer = {};                  // peer broadcast, hanya untuk mengirim permintaan data
+  memcpy(peer.peer_addr, broadcastMac, 6);
+  peer.channel = ESPNOW_CHANNEL;
+  peer.encrypt = false;
+  if (esp_now_add_peer(&peer) != ESP_OK) Serial.println("Gagal add peer");
+
   Serial.print("RECEIVER 5 jalur siap. MAC: ");
   Serial.println(WiFi.macAddress());
 }
@@ -204,10 +214,21 @@ void loop() {
   lastRx = lastPacketMs;
   portEXIT_CRITICAL(&mux);
 
-  bool linkUp = lastRx != 0 && (millis() - lastRx <= LINK_TIMEOUT_MS);
+  static unsigned long lastRequestMs = 0;
+  static bool waitingPrinted = false;
+  bool linkUp = lastRx != 0 && (LINK_TIMEOUT_MS == 0 || millis() - lastRx <= LINK_TIMEOUT_MS);
   if (!linkUp) {
-    if (lastLink) { Serial.println("[LINK PUTUS] Tidak ada data dari sender"); showLinkLost(); }
+    if (lastLink) {
+      Serial.println(lastRx == 0 ? "Menunggu data dari sender..." : "[LINK PUTUS] Tidak ada data dari sender");
+      showLinkLost();
+    }
     lastLink = false;
+    if (lastRx == 0 && (!waitingPrinted || millis() - lastRequestMs >= REQUEST_MS)) {   // minta status, bukan menunggu pasif
+      waitingPrinted = true;
+      lastRequestMs = millis();
+      uint8_t req = REQUEST_MAGIC;
+      esp_now_send(broadcastMac, &req, 1);
+    }
     delay(50);
     return;
   }

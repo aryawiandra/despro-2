@@ -356,6 +356,23 @@ Perintah sender (Serial Monitor 115200, Newline): `room all`, `room N`, `block j
 `sensors`, `list`.
 Upload: `cd Week7/dijkstra_5jalur/receiver && pio run -t upload` (idem `sender`).
 
+## Pengiriman ESP-NOW (tidak spam)
+
+Sender **tidak mengirim terus-menerus**. Paket dikirim hanya saat:
+- ada perubahan (sensor api berubah atau perintah teks seperti `block` / `clear` / `reset` / `room`),
+- sender baru menyala,
+- receiver meminta data (receiver baru menyala atau di-reset).
+
+Tiap kejadian dikirim **3 kali berselang 100 ms** (`SEND_REPEATS`, `SEND_REPEAT_MS`), karena ESP-NOW broadcast tidak ada ACK
+dan 1 paket bisa hilang. Setelah itu sender diam. Hasil tes di PC: boot 3 paket, idle 2 menit 0 paket, tiap perubahan 3 paket.
+`list`, `edges`, `sensors` tidak mengirim apa pun. Pesan `SEND ERROR` dibatasi maksimal 1× per 5 detik.
+
+Receiver yang baru menyala meminta status ke sender (paket 1 byte `REQUEST_MAGIC`, tiap 1,5 detik) **hanya selama belum ada
+data**, lalu berhenti. Jadi receiver yang dinyalakan belakangan tetap langsung menampilkan kondisi terbaru.
+
+Akibatnya **tidak ada deteksi link putus** (receiver tidak tahu kalau sender mati). Kalau butuh: di sender set `HEARTBEAT_MS 1000`
+dan di receiver `LINK_TIMEOUT_MS 3500`; strip akan menampilkan titik biru redup bila sender tidak terdengar.
+
 ## Daya: cukup dari laptop?
 
 **Ya, untuk uji ini cukup dari USB laptop**, karena hanya 34 LED. Perkiraan (WS2812B, `LED_BRIGHTNESS` 60/255, 20 mA per warna
