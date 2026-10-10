@@ -111,3 +111,63 @@ Panjang tiap jalur beda-beda, sementara diasumsikan **40 LED** (`EDGE_LEN[]` di 
 - **Mode strip addressable (`USE_ADDRESSABLE 1`)**: semua jalur disambung 1 rantai di GPIO 5 (urutan = nomor jalur),
   total 20 × 40 = 800 LED. Butuh library Adafruit NeoPixel dan catu 5 V terpisah (suntik daya tiap beberapa meter);
   hanya jalur rute yang menyala sehingga arus jauh lebih kecil dari 800 LED penuh.
+
+---
+
+# Dijkstra + LED strip WS2812B (`dijkstra_strip/`)
+
+Versi untuk **LED strip addressable** (pengganti `dijkstra_graph` yang LED biasa). Graf, bobot, dan mapping
+ruangan sudah dicocokkan dengan `Week4/graph-visualizer.png` dan `Week5/kodeIntegrasi.cpp` (20 jalur identik).
+
+- `sender/` — sama seperti `dijkstra_graph` (perintah teks, Dijkstra di `graph.h`), tapi paketnya membawa
+  **urutan jalur dari ruangan ke exit + arahnya**.
+- `receiver/` — jalur rute **hijau**, dengan kepala terang yang berjalan searah rute (nyala sekuensial,
+  sesuai proposal). Jalur lain mati. Link putus: titik biru redup tiap 10 LED.
+
+Perintah sender dan cara upload sama seperti `dijkstra_graph` (`room 0`, `block j1-j3`, `reset`, ...).
+Upload: `cd Week7/dijkstra_strip/receiver && pio run -t upload` (idem `sender`).
+
+## Susunan strip
+
+20 jalur disambung **1 rantai** di 1 pin data. Urutan rantai = nomor jalur (`edges` di sender), tiap jalur
+`EDGE_LEN[i]` LED (sementara 40 → total 800 LED ≈ 13 m pada 60 LED/m, sesuai 15 m strip di proposal).
+
+| # | Jalur | # | Jalur | # | Jalur | # | Jalur |
+|---|---|---|---|---|---|---|---|
+| 1 | j1-j2 | 6 | j4-j5 | 11 | j7-j9 | 16 | j11-j12 |
+| 2 | j1-j3 | 7 | j4-j6 | 12 | j8-j9 | 17 | j2-e1 |
+| 3 | j2-j3 | 8 | j5-j6 | 13 | j9-j10 | 18 | j4-e2 |
+| 4 | j2-j12 | 9 | j6-j7 | 14 | j10-j11 | 19 | j6-e2 |
+| 5 | j3-j4 | 10 | j7-j8 | 15 | j10-j12 | 20 | j12-e3 |
+
+- Arah rantai tiap jalur = dari node pertama ke node kedua (jalur #1 mengalir dari j1 ke j2). Jika strip jalur itu
+  terpasang kebalikannya, set `EDGE_REVERSED[i] = true` di `receiver.ino`; animasi tetap searah rute.
+- Antar-jalur: DOUT strip jalur *i* disambung ke DIN strip jalur *i+1* dengan kabel (jalur tidak harus bersebelahan secara fisik).
+- Panjang beda tiap jalur: ubah `EDGE_LEN[i]`. Total LED dihitung otomatis.
+
+## Konfigurasi pin dan listrik (receiver)
+
+| Sambungan | Ke |
+|---|---|
+| ESP32 **GPIO 5** | resistor 330 Ω → **DIN** strip jalur #1 (awal rantai) |
+| ESP32 **GND** | GND strip **dan** GND power supply (harus satu ground) |
+| Power supply **5 V** | +5V strip (bukan dari pin 5V ESP32) |
+| Kapasitor 1000 µF 6,3 V+ | antara +5V dan GND di awal strip (ESP32 tetap dari USB) |
+
+- Strip WS2812B dikendalikan data 5 V; data 3,3 V dari ESP32 biasanya cukup untuk kabel pendek. Kalau LED
+  berkedip acak/tidak menyala, pasang level shifter (74HCT125/74AHCT125) di jalur data.
+- Catu 5 V 30 A sesuai proposal. Hanya jalur rute yang menyala dan `LED_BRIGHTNESS` 60/255, jadi arus nyata jauh
+  di bawah 800 LED penuh (±16 A). Suntik daya +5V/GND ke strip tiap beberapa jalur supaya tegangan tidak jatuh di ujung.
+
+## Parameter di `receiver.ino`
+
+`ANIMATE` (1 = kepala berjalan, 0 = hijau diam), `CHASE_LEN`, `CHASE_STEP_MS`, `SHOW_BLOCKED_RED`
+(1 = jalur kena api merah), `LED_BRIGHTNESS`.
+
+## Tes cepat dengan 1 strip pendek
+
+Tanpa merakit 20 jalur: sambungkan **1 strip** (mis. 40 LED) ke GPIO 5 sebagai jalur #1 (awal rantai).
+Di sender: `room 0`, lalu `block j1-j3` → rute pindah ke j1>j2>e1 sehingga jalur #1 menyala hijau dengan kepala berjalan
+(jalur #17 ada di LED 641–680, tidak terlihat). `reset` → jalur #1 mati lagi.
+
+Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus); belum diuji di ESP32 asli.
