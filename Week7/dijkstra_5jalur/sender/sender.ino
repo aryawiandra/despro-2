@@ -1,8 +1,9 @@
 // WEEK 7 - NAVIGASI DIJKSTRA, UJI 5 STRIP (LED STRIP) - SENDER (ESP32 #1)
 // Graf dan Dijkstra tetap peta LENGKAP 20 jalur (graph.h). Strip LED fisik hanya ada di 5 jalur
 // (lihat receiver): #3 j2-j3, #11 j7-j9, #15 j10-j12, #18 j4-e2, #19 j6-e2. Sensor api asli juga hanya
-// di 5 jalur itu, dibaca dari pin AO analog (SENSOR_PIN[]); api di jalur lain disimulasikan lewat teks di Serial Monitor.
-// Hasil sensor dan teks digabung (OR). Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari
+// di 5 jalur itu, dibaca dari pin AO analog (SENSOR_PIN[]). INPUT API HANYA DARI SENSOR: simulasi lewat teks
+// (block / clear / reset) dimatikan (ALLOW_TEXT_SIM 0); jalur tanpa sensor tidak pernah dianggap kena api.
+// Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari
 // SETIAP ruangan ke exit terdekat, lalu hasil seluruh peta dikirim ke receiver lewat ESP-NOW:
 //   - jalur kena api            -> MERAH BERKEDIP
 //   - jalur aman menuju exit    -> HIJAU, dengan nyala sekuensial searah exit
@@ -14,6 +15,7 @@
 //   room all          -> rute tercepat dari semua ruangan ke exit (default)
 //   room <0-7>        -> hanya rute satu ruangan (0,1=j1  2,3=j5  4,5=j8  6,7=j11)
 //   start <node>      -> atau langsung pilih node asal, mis. start j5
+//   (hanya jika ALLOW_TEXT_SIM 1, untuk uji tanpa sensor:)
 //   block <jalur>     -> simulasi api di jalur mana pun, mis. block j6-j7   atau   block 9
 //   clear <jalur>     -> padamkan simulasi, mis. clear j6-j7
 //   reset             -> hapus semua simulasi teks (sensor asli tidak terpengaruh)
@@ -39,6 +41,7 @@
 
 // ---- Sensor api: hanya 5 jalur yang punya sensor asli. Dibaca lewat pin AO (analog) tiap sensor ----
 #define USE_SENSORS         1
+#define ALLOW_TEXT_SIM      0     // 0 = api HANYA dari sensor (default). 1 = aktifkan perintah block / clear / reset
 #define SENSOR_FIRE_BELOW   1500  // nilai ADC (0-4095) DI BAWAH ini = ada api (nilai dari Week4/kodeUpdated.cpp)
 #define SENSOR_CLEAR_ABOVE  1800  // jalur dianggap aman lagi bila nilai naik DI ATAS ini (histeresis anti-kedip)
 #define SENSOR_SAMPLES      8     // rata-rata N pembacaan ADC tiap scan (meredam noise)
@@ -275,8 +278,13 @@ void printEdges() {
 }
 
 void printHelp() {
+#if ALLOW_TEXT_SIM
   Serial.println("Perintah: room all | room <0-7> | start <node> | block <jalur> | clear <jalur> | reset | edges | sensors | list | help");
   Serial.println("Jalur: nama 'j1-j2' atau nomor 1-20 (lihat 'edges')");
+#else
+  Serial.println("Perintah: room all | room <0-7> | start <node> | edges | sensors | list | help");
+  Serial.println("Input api hanya dari sensor AO (simulasi teks dimatikan, ALLOW_TEXT_SIM 0)");
+#endif
 }
 
 // "j1-j2" (urutan bebas) atau "1".."20" -> indeks jalur, -1 jika tidak valid
@@ -353,6 +361,11 @@ void handleCommand(String line) {
     showAll = false;
     startRoom = -1;
     startNode = n;
+#if !ALLOW_TEXT_SIM
+  } else if (cmd == "block" || cmd == "b" || cmd == "clear" || cmd == "c" || cmd == "reset" || cmd == "0") {
+    Serial.println("Simulasi api lewat teks dimatikan: api hanya dari sensor AO. (Set ALLOW_TEXT_SIM 1 di sender.ino untuk mengaktifkan.)");
+    return;
+#else
   } else if (cmd == "block" || cmd == "b" || cmd == "clear" || cmd == "c") {
     int e = parseEdge(arg);
     if (e < 0) { Serial.println("Jalur tidak dikenal. Contoh: block j1-j2  atau  block 1  (lihat 'edges')"); return; }
@@ -360,6 +373,7 @@ void handleCommand(String line) {
     else                              simMask &= ~(1UL << e);
   } else if (cmd == "reset" || cmd == "0") {
     simMask = 0;
+#endif
   } else if (cmd == "sensors") {
     printSensors();
     return;
