@@ -288,13 +288,14 @@ lain disimulasikan lewat teks (`block j6-j7`).
 
 | Jalur | Nama | Bobot | LED | Strip (receiver) | Sensor api (sender) |
 |---|---|---|---|---|---|
-| #3 | j2-j3 | 12 | **7** | **GPIO 4** → 330 Ω → DIN | **GPIO 32** ← DO |
-| #11 | j7-j9 | 12 | **8** | **GPIO 5** → 330 Ω → DIN | **GPIO 33** ← DO |
-| #15 | j10-j12 | 12 | **8** | **GPIO 13** → 330 Ω → DIN | **GPIO 25** ← DO |
-| #18 | j4-e2 | 6 | **6** | **GPIO 14** → 330 Ω → DIN | **GPIO 26** ← DO |
-| #19 | j6-e2 | 6 | **5** | **GPIO 16** → 330 Ω → DIN | **GPIO 27** ← DO |
+| #3 | j2-j3 | 12 | **7** | **GPIO 4** → 330 Ω → DIN | **GPIO 32** ← AO |
+| #11 | j7-j9 | 12 | **8** | **GPIO 5** → 330 Ω → DIN | **GPIO 33** ← AO |
+| #15 | j10-j12 | 12 | **8** | **GPIO 13** → 330 Ω → DIN | **GPIO 34** ← AO |
+| #18 | j4-e2 | 6 | **6** | **GPIO 14** → 330 Ω → DIN | **GPIO 35** ← AO |
+| #19 | j6-e2 | 6 | **5** | **GPIO 18** → 330 Ω → DIN | **GPIO 36 (VP)** ← AO |
 
 Total 34 LED. Panjang LED ada di `STRIPS[]` (`receiver.ino`); pin sensor di `SENSOR_PIN[]` (`sender.ino`).
+GPIO 16 dan 17 tidak dipakai (berlabel RX2 / TX2 di banyak board).
 
 ## Tampilan
 
@@ -327,7 +328,7 @@ Parameter di `receiver.ino`: `BLINK_MS`, `ANIMATE` (0 = hijau diam), `CHASE_LEN`
 | GPIO 5 | resistor 330 Ω → **DIN** strip #11 (j7-j9, 8 LED) |
 | GPIO 13 | resistor 330 Ω → **DIN** strip #15 (j10-j12, 8 LED) |
 | GPIO 14 | resistor 330 Ω → **DIN** strip #18 (j4-e2, 6 LED) |
-| GPIO 16 | resistor 330 Ω → **DIN** strip #19 (j6-e2, 5 LED) |
+| GPIO 18 | resistor 330 Ω → **DIN** strip #19 (j6-e2, 5 LED) |
 | GND ESP32 | GND semua strip |
 | Pin VIN / 5V ESP32 (rel USB 5 V) | +5V semua strip (paralel) |
 | Kapasitor 470–1000 µF | antara +5V dan GND di dekat strip (kaki panjang ke +5V) |
@@ -336,24 +337,33 @@ Parameter di `receiver.ino`: `BLINK_MS`, `ANIMATE` (0 = hijau diam), `CHASE_LEN`
 Arah data strip = dari node pertama ke node kedua nama jalur (#3 mengalir dari j2 ke j3). Kalau terpasang kebalikannya,
 set `reversed = true` di `STRIPS[]`. Kalau LED berkedip acak atau salah warna: pasang level shifter 74HCT245 di tiap kabel data.
 
-## Rangkaian ESP32 #1 — SENDER (5 sensor)
+## Rangkaian ESP32 #1 — SENDER (5 sensor, pin AO analog)
 
-| Sensor di jalur | Pin **DO** sensor ke |
+| Sensor di jalur | Pin **AO** sensor ke |
 |---|---|
 | #3 j2-j3 | GPIO 32 |
 | #11 j7-j9 | GPIO 33 |
-| #15 j10-j12 | GPIO 25 |
-| #18 j4-e2 | GPIO 26 |
-| #19 j6-e2 | GPIO 27 |
-| VCC semua sensor | 3V3 ESP32 |
+| #15 j10-j12 | GPIO 34 |
+| #18 j4-e2 | GPIO 35 |
+| #19 j6-e2 | GPIO 36 (berlabel VP / SVP) |
+| VCC semua sensor | **3V3** ESP32 (jangan 5 V) |
 | GND semua sensor | GND ESP32 |
 
-Pin ini punya pull-up internal, jadi tidak perlu resistor tambahan. Modul flame sensor aktif LOW (DO = 0 saat ada api);
-kalau modulmu aktif HIGH ubah `SENSOR_ACTIVE_LEVEL`. Pin `AO` tidak dipakai. Jalur lain (tanpa sensor, pin = -1) hanya bisa
-disimulasikan lewat teks.
+- **Pin harus ADC1** (GPIO 32, 33, 34, 35, 36, 39). Pin ADC2 (4, 12–15, 25–27) tidak bisa dibaca analog saat WiFi/ESP-NOW aktif,
+  dan sender memakai ESP-NOW. Cadangan: GPIO 39 (berlabel VN / SVN). Tidak perlu pull-up. Kode memberi peringatan di Serial
+  kalau ada pin sensor yang bukan ADC1.
+- **VCC sensor harus 3,3 V**: pada 5 V pin AO bisa mencapai 5 V dan merusak ADC ESP32. Pin `DO` tidak dipakai.
+- **Ambang api**: nilai ADC 12-bit (0–4095). Seperti `Week4/kodeUpdated.cpp`, api bila nilai **< 1500** (`SENSOR_FIRE_BELOW`);
+  kembali aman bila nilai **> 1800** (`SENSOR_CLEAR_ABOVE`, histeresis anti-kedip). Tiap scan memakai rata-rata 8 pembacaan,
+  dan status baru berubah setelah 3 scan berturut-turut (±150 ms).
+- **Kalibrasi**: ketik `sensors` di Serial Monitor sender untuk melihat nilai ADC tiap sensor, misalnya
+  `#19 j6-e2 AO GPIO 36 nilai=3900 (api bila < 1500)`. Catat nilai saat tanpa api dan saat api didekatkan, lalu atur
+  `SENSOR_FIRE_BELOW` / `SENSOR_CLEAR_ABOVE` di `sender.ino` di antara kedua nilai itu. Tiap modul bisa berbeda.
+
+Jalur lain (tanpa sensor, pin = -1) hanya bisa disimulasikan lewat teks.
 
 Perintah sender (Serial Monitor 115200, Newline): `room all`, `room N`, `block j6-j7`, `clear j6-j7`, `reset`, `edges`,
-`sensors`, `list`.
+`sensors` (nilai ADC), `list`.
 Upload: `cd Week7/dijkstra_5jalur/receiver && pio run -t upload` (idem `sender`).
 
 ## Pengiriman ESP-NOW (tidak spam)

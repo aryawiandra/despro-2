@@ -1,7 +1,7 @@
 // WEEK 7 - NAVIGASI DIJKSTRA, UJI 5 STRIP (LED STRIP) - SENDER (ESP32 #1)
 // Graf dan Dijkstra tetap peta LENGKAP 20 jalur (graph.h). Strip LED fisik hanya ada di 5 jalur
 // (lihat receiver): #3 j2-j3, #11 j7-j9, #15 j10-j12, #18 j4-e2, #19 j6-e2. Sensor api asli juga hanya
-// di 5 jalur itu (SENSOR_PIN[]); api di jalur lain disimulasikan lewat teks di Serial Monitor.
+// di 5 jalur itu, dibaca dari pin AO analog (SENSOR_PIN[]); api di jalur lain disimulasikan lewat teks di Serial Monitor.
 // Hasil sensor dan teks digabung (OR). Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari
 // SETIAP ruangan ke exit terdekat, lalu hasil seluruh peta dikirim ke receiver lewat ESP-NOW:
 //   - jalur kena api            -> MERAH BERKEDIP
@@ -18,7 +18,7 @@
 //   clear <jalur>     -> padamkan simulasi, mis. clear j6-j7
 //   reset             -> hapus semua simulasi teks (sensor asli tidak terpengaruh)
 //   edges             -> daftar 20 jalur (nomor, nama, bobot, sensor, status)
-//   sensors           -> bacaan mentah 5 sensor
+//   sensors           -> nilai ADC (AO) 5 sensor, untuk kalibrasi ambang
 //   list              -> status + rute sekarang
 //   help
 #include <WiFi.h>
@@ -37,19 +37,22 @@
 #define REQUEST_MAGIC     0xA5  // paket 1 byte dari receiver: "kirim status sekarang"
 #define SEND_ERROR_PRINT_MS 5000 // pesan SEND ERROR dibatasi 1x per 5 detik
 
-// ---- Sensor api: hanya 5 jalur yang punya sensor asli, tiap sensor langsung ke 1 pin GPIO ----
+// ---- Sensor api: hanya 5 jalur yang punya sensor asli. Dibaca lewat pin AO (analog) tiap sensor ----
 #define USE_SENSORS         1
-#define SENSOR_ACTIVE_LEVEL LOW  // level output sensor saat ada api (modul flame sensor umumnya LOW)
-#define SENSOR_SCAN_MS      50   // periode scan sensor
-#define SENSOR_CONFIRM      3    // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
+#define SENSOR_FIRE_BELOW   1500  // nilai ADC (0-4095) DI BAWAH ini = ada api (nilai dari Week4/kodeUpdated.cpp)
+#define SENSOR_CLEAR_ABOVE  1800  // jalur dianggap aman lagi bila nilai naik DI ATAS ini (histeresis anti-kedip)
+#define SENSOR_SAMPLES      8     // rata-rata N pembacaan ADC tiap scan (meredam noise)
+#define SENSOR_SCAN_MS      50    // periode scan sensor
+#define SENSOR_CONFIRM      3     // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
 
-// Pin DO sensor tiap jalur. Indeks = nomor jalur - 1 (lihat 'edges'). -1 = jalur itu tidak punya sensor
-// (api di jalur itu hanya bisa disimulasikan lewat teks). Pakai pin dengan pull-up internal
-// (4, 5, 13, 14, 16-19, 21-23, 25-27, 32, 33).
+// Pin AO sensor tiap jalur. Indeks = nomor jalur - 1 (lihat 'edges'). -1 = jalur itu tidak punya sensor
+// (api di jalur itu hanya bisa disimulasikan lewat teks).
+// WAJIB pin ADC1: GPIO 32, 33, 34, 35, 36 (VP), 39 (VN). Pin ADC2 (4, 12-15, 25-27) TIDAK bisa dibaca analog
+// saat WiFi/ESP-NOW aktif. Semua pin ini hanya-input atau bebas; tidak perlu pull-up.
 const int8_t SENSOR_PIN[NUM_EDGES] = {
   -1,  // #1  j1-j2
   -1,  // #2  j1-j3
-  32,  // #3  j2-j3   <- sensor, strip 7 LED
+  32,  // #3  j2-j3   <- sensor AO, strip 7 LED
   -1,  // #4  j2-j12
   -1,  // #5  j3-j4
   -1,  // #6  j4-j5
@@ -57,15 +60,15 @@ const int8_t SENSOR_PIN[NUM_EDGES] = {
   -1,  // #8  j5-j6
   -1,  // #9  j6-j7
   -1,  // #10 j7-j8
-  33,  // #11 j7-j9   <- sensor, strip 8 LED
+  33,  // #11 j7-j9   <- sensor AO, strip 8 LED
   -1,  // #12 j8-j9
   -1,  // #13 j9-j10
   -1,  // #14 j10-j11
-  25,  // #15 j10-j12 <- sensor, strip 8 LED
+  34,  // #15 j10-j12 <- sensor AO, strip 8 LED
   -1,  // #16 j11-j12
   -1,  // #17 j2-e1
-  26,  // #18 j4-e2   <- sensor, strip 6 LED
-  27,  // #19 j6-e2   <- sensor, strip 5 LED
+  35,  // #18 j4-e2   <- sensor AO, strip 6 LED
+  36,  // #19 j6-e2   <- sensor AO (label VP / SVP), strip 5 LED
   -1   // #20 j12-e3
 };
 
@@ -97,24 +100,42 @@ volatile bool requestFlag = false;   // diisi callback saat receiver meminta dat
 unsigned long lastScanMs = 0;
 
 // ---------- sensor ----------
+static inline bool isAdc1Pin(int pin) { return pin == 32 || pin == 33 || pin == 34 || pin == 35 || pin == 36 || pin == 39; }
+
 void sensorsInit() {
 #if USE_SENSORS
+  analogReadResolution(12);              // 0..4095
+  analogSetAttenuation(ADC_11db);        // rentang 0..~3,3 V
   for (int i = 0; i < NUM_EDGES; i++) {
     int pin = SENSOR_PIN[i];
     if (pin < 0) continue;
-    // 34..39 tidak punya pull-up internal; sisanya pakai pull-up internal sebagai pengaman bila sensor lepas
-    pinMode(pin, (pin >= 34 && pin <= 39) ? INPUT : INPUT_PULLUP);
+    if (!isAdc1Pin(pin)) {
+      Serial.print("PERINGATAN: sensor jalur #"); Serial.print(i + 1); Serial.print(" di GPIO "); Serial.print(pin);
+      Serial.println(" bukan pin ADC1; pembacaan analog tidak akan jalan saat WiFi aktif. Pakai 32/33/34/35/36/39.");
+    }
   }
 #endif
 }
 
-// Baca 20 sensor, kembalikan bitmask mentah (bit i = sensor jalur i melihat api)
+// Rata-rata beberapa pembacaan ADC (0..4095) pada pin AO
+int readAdc(int pin) {
+  long sum = 0;
+  for (int n = 0; n < SENSOR_SAMPLES; n++) sum += analogRead(pin);
+  return (int)(sum / SENSOR_SAMPLES);
+}
+
+// Baca sensor, kembalikan bitmask mentah (bit i = sensor jalur i+1 melihat api).
+// Histeresis: api terdeteksi bila nilai < SENSOR_FIRE_BELOW; baru dianggap padam bila nilai > SENSOR_CLEAR_ABOVE.
 uint32_t readRawSensors() {
   uint32_t raw = 0;
 #if USE_SENSORS
   for (int i = 0; i < NUM_EDGES; i++) {
     int pin = SENSOR_PIN[i];
-    if (pin >= 0 && digitalRead(pin) == SENSOR_ACTIVE_LEVEL) raw |= (1UL << i);
+    if (pin < 0) continue;
+    int v = readAdc(pin);
+    bool wasFire = (sensorMask >> i) & 1;
+    bool fire = wasFire ? (v < SENSOR_CLEAR_ABOVE) : (v < SENSOR_FIRE_BELOW);
+    if (fire) raw |= (1UL << i);
   }
 #endif
   return raw;
@@ -275,14 +296,15 @@ int parseEdge(String s) {
 
 void printSensors() {
 #if USE_SENSORS
-  uint32_t raw = readRawSensors();
   for (int i = 0; i < NUM_EDGES; i++) {
     if (SENSOR_PIN[i] < 0) continue;
+    int v = readAdc(SENSOR_PIN[i]);
     Serial.print("#"); Serial.print(i + 1); Serial.print(" ");
     printEdgeName(i);
-    Serial.print(" GPIO "); Serial.print(SENSOR_PIN[i]);
-    Serial.print(" mentah="); Serial.print((raw >> i) & 1 ? "API" : "aman");
-    Serial.print(" terkonfirmasi="); Serial.println((sensorMask >> i) & 1 ? "API" : "aman");
+    Serial.print(" AO GPIO "); Serial.print(SENSOR_PIN[i]);
+    Serial.print(" nilai="); Serial.print(v);
+    Serial.print(" (api bila < "); Serial.print(SENSOR_FIRE_BELOW);
+    Serial.print(") terkonfirmasi="); Serial.println((sensorMask >> i) & 1 ? "API" : "aman");
   }
 #else
   Serial.println("USE_SENSORS = 0, sensor tidak dibaca");
