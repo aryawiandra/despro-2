@@ -20,7 +20,8 @@
 //   clear <jalur>     -> padamkan simulasi, mis. clear j6-j7
 //   reset             -> hapus semua simulasi teks (sensor asli tidak terpengaruh)
 //   edges             -> daftar 20 jalur (nomor, nama, bobot, sensor, status)
-//   sensors           -> nilai ADC (AO) 5 sensor, untuk kalibrasi ambang
+//   sensors           -> nilai ADC (AO) 5 sensor sekali, untuk kalibrasi ambang
+//   watch             -> nilai ADC 5 sensor terus-menerus (tiap 300 ms); ketik 'watch' lagi untuk berhenti
 //   list              -> status + rute sekarang
 //   help
 #include <WiFi.h>
@@ -42,8 +43,10 @@
 // ---- Sensor api: hanya 5 jalur yang punya sensor asli. Dibaca lewat pin AO (analog) tiap sensor ----
 #define USE_SENSORS         1
 #define ALLOW_TEXT_SIM      0     // 0 = api HANYA dari sensor (default). 1 = aktifkan perintah block / clear / reset
-#define SENSOR_FIRE_BELOW   1500  // nilai ADC (0-4095) DI BAWAH ini = ada api (nilai dari Week4/kodeUpdated.cpp)
-#define SENSOR_CLEAR_ABOVE  1800  // jalur dianggap aman lagi bila nilai naik DI ATAS ini (histeresis anti-kedip)
+#define SENSOR_FIRE_WHEN_LOWER 1  // 1 = nilai AO TURUN saat ada api (modul flame sensor umumnya). 0 = nilai AO NAIK saat ada api
+#define SENSOR_FIRE_BELOW   1500  // skor ADC (0-4095) DI BAWAH ini = ada api (nilai dari Week4/kodeUpdated.cpp)
+#define SENSOR_CLEAR_ABOVE  1800  // jalur dianggap aman lagi bila skor naik DI ATAS ini (histeresis anti-kedip)
+                                  // "skor" = nilai ADC bila SENSOR_FIRE_WHEN_LOWER 1, atau 4095 - nilai bila 0
 #define SENSOR_SAMPLES      8     // rata-rata N pembacaan ADC tiap scan (meredam noise)
 #define SENSOR_SCAN_MS      50    // periode scan sensor
 #define SENSOR_CONFIRM      3     // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
@@ -127,6 +130,9 @@ int readAdc(int pin) {
   return (int)(sum / SENSOR_SAMPLES);
 }
 
+// Skor yang dibandingkan dengan ambang: makin kecil makin dekat api
+static inline int sensorScore(int adcValue) { return SENSOR_FIRE_WHEN_LOWER ? adcValue : 4095 - adcValue; }
+
 // Baca sensor, kembalikan bitmask mentah (bit i = sensor jalur i+1 melihat api).
 // Histeresis: api terdeteksi bila nilai < SENSOR_FIRE_BELOW; baru dianggap padam bila nilai > SENSOR_CLEAR_ABOVE.
 uint32_t readRawSensors() {
@@ -135,7 +141,7 @@ uint32_t readRawSensors() {
   for (int i = 0; i < NUM_EDGES; i++) {
     int pin = SENSOR_PIN[i];
     if (pin < 0) continue;
-    int v = readAdc(pin);
+    int v = sensorScore(readAdc(pin));
     bool wasFire = (sensorMask >> i) & 1;
     bool fire = wasFire ? (v < SENSOR_CLEAR_ABOVE) : (v < SENSOR_FIRE_BELOW);
     if (fire) raw |= (1UL << i);
@@ -279,10 +285,10 @@ void printEdges() {
 
 void printHelp() {
 #if ALLOW_TEXT_SIM
-  Serial.println("Perintah: room all | room <0-7> | start <node> | block <jalur> | clear <jalur> | reset | edges | sensors | list | help");
+  Serial.println("Perintah: room all | room <0-7> | start <node> | block <jalur> | clear <jalur> | reset | edges | sensors | watch | list | help");
   Serial.println("Jalur: nama 'j1-j2' atau nomor 1-20 (lihat 'edges')");
 #else
-  Serial.println("Perintah: room all | room <0-7> | start <node> | edges | sensors | list | help");
+  Serial.println("Perintah: room all | room <0-7> | start <node> | edges | sensors | watch | list | help");
   Serial.println("Input api hanya dari sensor AO (simulasi teks dimatikan, ALLOW_TEXT_SIM 0)");
 #endif
 }
@@ -311,11 +317,28 @@ void printSensors() {
     printEdgeName(i);
     Serial.print(" AO GPIO "); Serial.print(SENSOR_PIN[i]);
     Serial.print(" nilai="); Serial.print(v);
-    Serial.print(" (api bila < "); Serial.print(SENSOR_FIRE_BELOW);
+    Serial.print(SENSOR_FIRE_WHEN_LOWER ? " (api bila < " : " (api bila > ");
+    Serial.print(SENSOR_FIRE_WHEN_LOWER ? SENSOR_FIRE_BELOW : 4095 - SENSOR_FIRE_BELOW);
     Serial.print(") terkonfirmasi="); Serial.println((sensorMask >> i) & 1 ? "API" : "aman");
   }
 #else
   Serial.println("USE_SENSORS = 0, sensor tidak dibaca");
+#endif
+}
+
+// Satu baris nilai ADC semua sensor untuk 'watch': "#3=3900 #11=3890 ..." ; tanda * = sedang dianggap api
+bool watchOn = false;
+unsigned long lastWatchMs = 0;
+void printWatchLine() {
+#if USE_SENSORS
+  for (int i = 0; i < NUM_EDGES; i++) {
+    if (SENSOR_PIN[i] < 0) continue;
+    Serial.print("#"); Serial.print(i + 1); Serial.print("=");
+    Serial.print(readAdc(SENSOR_PIN[i]));
+    if ((sensorMask >> i) & 1) Serial.print("*");
+    Serial.print(" ");
+  }
+  Serial.println();
 #endif
 }
 
@@ -376,6 +399,10 @@ void handleCommand(String line) {
 #endif
   } else if (cmd == "sensors") {
     printSensors();
+    return;
+  } else if (cmd == "watch" || cmd == "w") {
+    watchOn = !watchOn;
+    Serial.println(watchOn ? "watch AKTIF: nilai ADC tiap 300 ms (ketik 'watch' lagi untuk berhenti). Dekatkan api ke sensor dan lihat nilainya." : "watch berhenti");
     return;
   } else if (cmd == "edges" || cmd == "e") {
     printEdges();
@@ -440,6 +467,8 @@ void loop() {
       recompute();
     }
   }
+
+  if (watchOn && millis() - lastWatchMs >= 300) { lastWatchMs = millis(); printWatchLine(); }
 
   if (requestFlag) { requestFlag = false; requestSend(); }
 

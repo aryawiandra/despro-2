@@ -361,9 +361,15 @@ set `reversed = true` di `STRIPS[]`. Kalau LED berkedip acak atau salah warna: p
 - **Ambang api**: nilai ADC 12-bit (0–4095). Seperti `Week4/kodeUpdated.cpp`, api bila nilai **< 1500** (`SENSOR_FIRE_BELOW`);
   kembali aman bila nilai **> 1800** (`SENSOR_CLEAR_ABOVE`, histeresis anti-kedip). Tiap scan memakai rata-rata 8 pembacaan,
   dan status baru berubah setelah 3 scan berturut-turut (±150 ms).
-- **Kalibrasi**: ketik `sensors` di Serial Monitor sender untuk melihat nilai ADC tiap sensor, misalnya
-  `#19 j6-e2 AO GPIO 36 nilai=3900 (api bila < 1500)`. Catat nilai saat tanpa api dan saat api didekatkan, lalu atur
-  `SENSOR_FIRE_BELOW` / `SENSOR_CLEAR_ABOVE` di `sender.ino` di antara kedua nilai itu. Tiap modul bisa berbeda.
+- **Kalibrasi / sensor tidak bereaksi**: ketik `watch` di Serial Monitor sender. Nilai ADC kelima sensor tampil tiap 300 ms
+  (`#3=3900 #11=3890 ...`, tanda `*` = sedang dianggap api); ketik `watch` lagi untuk berhenti. `sensors` menampilkan nilai sekali.
+  Dekatkan api (korek, ±10–20 cm, tepat di depan sensor) dan lihat apakah nilainya berubah:
+  - Nilai **turun** di bawah 1500 → bereaksi normal. Kalau turunnya tidak sampai 1500, naikkan `SENSOR_FIRE_BELOW` dan
+    `SENSOR_CLEAR_ABOVE` (mis. 2500 / 2800) di antara nilai tanpa api dan nilai saat api.
+  - Nilai **naik** saat ada api → set `SENSOR_FIRE_WHEN_LOWER 0` (ambang dibalik otomatis).
+  - Nilai **tidak berubah sama sekali** (selalu ±4095 atau selalu 0 atau acak) → cek kabel AO (bukan DO), VCC 3,3 V, GND,
+    dan nomor GPIO. Trimpot biru di modul dan LED "D0" di modul hanya memengaruhi pin DO, bukan AO yang dibaca kode ini.
+  Tiap modul bisa berbeda; atur ambang dari nilai yang terbaca.
 
 Jalur lain (tanpa sensor, pin = -1) tidak pernah dianggap kena api (kecuali `ALLOW_TEXT_SIM 1`).
 
