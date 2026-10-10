@@ -6,11 +6,11 @@
 //   - jalur kena api            -> MERAH
 //   - jalur aman menuju exit    -> HIJAU, dengan nyala sekuensial searah exit
 //   - jalur lain                -> mati
-// Mode default "room all": SEMUA junction dipandu ke exit terdekatnya sekaligus, jadi beberapa jalur
-// bisa hijau bersamaan. "room N" / "start j5" hanya menampilkan rute satu ruangan/node.
+// Mode default "room all": rute tercepat dari SETIAP ruangan (0-7) ke exit terdekat dihitung sekaligus,
+// jadi beberapa jalur hijau bersamaan. "room N" / "start j5" hanya menampilkan rute satu ruangan/node.
 //
 // Perintah (Serial Monitor 115200, line ending "Newline"):
-//   room all          -> semua jalur aman menuju exit menyala hijau (default)
+//   room all          -> rute tercepat dari semua ruangan ke exit menyala hijau (default)
 //   room <0-7>        -> hanya rute satu ruangan (0,1=j1  2,3=j5  4,5=j8  6,7=j11)
 //   start <node>      -> atau langsung pilih node asal, mis. start j5
 //   block <jalur>     -> simulasi api di jalur, mis. block j1-j2   atau   block 1
@@ -51,7 +51,7 @@ typedef struct __attribute__((packed)) {
   uint8_t  flags;         // bit0 = tidak ada rute aman sama sekali
 } RoutePacket;
 
-#define DEFAULT_SHOW_ALL    1    // 1 = semua jalur aman menuju exit hijau; 0 = hanya rute DEFAULT_ROOM
+#define DEFAULT_SHOW_ALL    1    // 1 = rute tercepat dari semua ruangan hijau; 0 = hanya rute DEFAULT_ROOM
 #define DEFAULT_ROOM        0    // ruangan asal bila DEFAULT_SHOW_ALL = 0 (atau setelah 'room N')
 
 bool showAll = DEFAULT_SHOW_ALL;
@@ -139,7 +139,7 @@ void printNodeList(uint16_t mask) {
 
 void printRoute() {
   Serial.print("Mode: ");
-  if (showAll) Serial.print("semua jalur aman");
+  if (showAll) Serial.print("semua ruangan");
   else {
     Serial.print("rute ");
     if (startRoom >= 0) { Serial.print("ruang "); Serial.print(startRoom); Serial.print(" ("); }
@@ -171,7 +171,7 @@ void printRoute() {
   }
   Serial.println();
   if (showAll && safe.isolatedMask) {
-    Serial.print("Junction TERPUTUS dari exit: ");
+    Serial.print("Ruangan di junction ini TERPUTUS dari exit: ");
     printNodeList(safe.isolatedMask);
     Serial.println();
   }

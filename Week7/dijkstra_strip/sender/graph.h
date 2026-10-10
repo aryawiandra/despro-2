@@ -145,12 +145,13 @@ struct SafeMap {
   uint32_t revMask;         // bit i = arah menuju exit melewati jalur i dari node v ke u (kebalikan tabel EDGES)
   uint8_t  depth[NUM_EDGES];// jumlah jalur dari ujung awal jalur ini sampai exit (1 = jalur menempel ke exit)
   int      numGreen;
-  uint16_t isolatedMask;    // bit n = junction n (0..11) tidak punya rute aman ke exit mana pun
+  uint16_t isolatedMask;    // bit n = junction n (tempat ruangan) tidak punya rute aman ke exit mana pun
 };
 
-// Dijkstra multi-sumber dari SEMUA exit sekaligus (graf tak berarah, jalur terblokir dibuang).
-// Tiap junction yang masih terhubung ke exit menyalakan 1 jalur: langkah pertama menuju exit terdekatnya.
-// Hasilnya pohon rute menuju exit, sehingga arah tiap jalur tidak pernah bertabrakan.
+// Dijkstra multi-sumber dari SEMUA exit sekaligus (graf tak berarah, jalur terblokir dibuang) memberi
+// jarak dan langkah berikutnya menuju exit terdekat untuk tiap node. Lalu dari SETIAP RUANGAN (0..7, lewat
+// junction ROOM_TO_JUNCTION) ditelusuri rute tercepatnya sampai exit; semua jalur yang dilewati menjadi hijau.
+// Rute-rute itu membentuk pohon menuju exit, sehingga arah tiap jalur tidak pernah bertabrakan.
 inline SafeMap computeSafeForest(uint32_t blockedMask) {
   SafeMap m;
   m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
@@ -179,13 +180,17 @@ inline SafeMap computeSafeForest(uint32_t blockedMask) {
     }
   }
 
-  for (int n = 0; n < 12; n++) {           // junction j1..j12
-    if (dist[n] >= INF || parent[n] < 0) { m.isolatedMask |= (1U << n); continue; }
-    int idx = findEdgeIndex(n, parent[n]);
-    m.greenMask |= (1UL << idx);
-    if (EDGES[idx].v == n) m.revMask |= (1UL << idx);   // berangkat dari v -> u
-    m.depth[idx] = (uint8_t)hops[n];
-    m.numGreen++;
+  for (int room = 0; room < 8; room++) {
+    int start = ROOM_TO_JUNCTION[room];
+    if (dist[start] >= INF) { m.isolatedMask |= (1U << start); continue; }   // ruangan ini terputus dari semua exit
+    for (int n = start; parent[n] >= 0; n = parent[n]) {                      // telusuri sampai exit
+      int idx = findEdgeIndex(n, parent[n]);
+      if ((m.greenMask >> idx) & 1) break;                                    // sisa rute sudah ditandai ruangan lain
+      m.greenMask |= (1UL << idx);
+      if (EDGES[idx].v == n) m.revMask |= (1UL << idx);                       // berangkat dari v -> u
+      m.depth[idx] = (uint8_t)hops[n];
+      m.numGreen++;
+    }
   }
   return m;
 }

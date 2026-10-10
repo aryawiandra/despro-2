@@ -119,8 +119,8 @@ Panjang tiap jalur beda-beda, sementara diasumsikan **40 LED** (`EDGE_LEN[]` di 
 Versi untuk **LED strip addressable** (pengganti `dijkstra_graph` yang LED biasa). Graf, bobot, dan mapping
 ruangan sudah dicocokkan dengan `Week4/graph-visualizer.png` dan `Week5/kodeIntegrasi.cpp` (20 jalur identik).
 
-- `sender/` — baca sensor, Dijkstra di `graph.h`. Jalur yang kena api **merah**; **semua jalur aman yang menuju exit
-  hijau** (tiap junction dipandu ke exit terdekatnya, jadi beberapa jalur hijau bersamaan); jalur lain mati.
+- `sender/` — baca sensor, Dijkstra di `graph.h`. Jalur yang kena api **merah**; **rute tercepat dari setiap ruangan
+  ke exit hijau** (beberapa jalur hijau bersamaan); jalur lain mati.
 - `receiver/` — jalur hijau dengan kepala terang yang mengalir searah exit (nyala sekuensial, sesuai proposal).
   Link putus: titik biru redup tiap 10 LED.
 
@@ -234,11 +234,11 @@ tiap beberapa jalur. Rantai: DOUT jalur *i* → DIN jalur *i+1*, urut #1–#20, 
 
 ## Input ruangan asal
 
-Default (`room all`): semua junction dipandu ke exit terdekatnya sekaligus, jadi tidak perlu memilih ruangan —
-12 jalur hijau saat aman, dan berubah otomatis saat ada api. Untuk melihat rute satu ruangan saja: `room N`
+Default (`room all`): rute tercepat dari setiap ruangan (0–7, lewat junction j1, j5, j8, j11) ke exit dihitung sekaligus,
+jadi tidak perlu memilih ruangan — 10 jalur hijau saat aman, dan berubah otomatis saat ada api. Untuk melihat rute satu ruangan saja: `room N`
 (0,1 → j1; 2,3 → j5; 4,5 → j8; 6,7 → j11) atau `start j5`; `room all` kembali ke default.
 Ubah default lewat `DEFAULT_SHOW_ALL` di `sender.ino`. Junction yang terputus dari semua exit dicetak di Serial
-(`Junction TERPUTUS dari exit`).
+(`Ruangan di junction ini TERPUTUS dari exit`).
 
 ## Upload dan jalankan
 
@@ -255,7 +255,7 @@ sensor `block j1-j3` / `clear j1-j3` / `reset`.
 1. **Sensor:** ketik `sensors` di monitor sender. Semua jalur harus `aman`. Dekatkan api ke satu sensor: baris jalur itu
    jadi `API` dan monitor menampilkan `[SENSOR] api di: ...`. Kalau ada jalur yang `API` padahal tidak ada api: cek pull-up
    10 kΩ, polaritas `SENSOR_ACTIVE_LEVEL`, atau channel yang salah sambung.
-2. **Rute:** tanpa api, 12 jalur hijau (j1>j3, j3>j2, j2>e1, j4>e2, ...). Dekatkan api ke sensor j1-j3 → jalur #2 **merah**
+2. **Rute:** tanpa api, 10 jalur hijau (j1>j3, j3>j2, j2>e1, j5>j4, j4>e2, j8>j7, j7>j6, j6>e2, j11>j12, j12>e3). Dekatkan api ke sensor j1-j3 → jalur #2 **merah**
    dan j1 berpindah ke j1>j2 (hijau) dalam < 1 detik.
 3. **Receiver:** jalur hijau dengan kepala terang mengalir menuju exit; jalur api merah; jalur lain mati.
 4. **Semua tertutup:** api di semua jalan keluar (j2-e1, j4-e2, j6-e2, j12-e3) → `[BAHAYA]` di sender, tidak ada jalur hijau, jalur api merah.
