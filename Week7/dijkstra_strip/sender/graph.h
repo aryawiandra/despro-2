@@ -140,12 +140,17 @@ inline RouteResult computeRoute(int startNode, uint32_t blockedMask) {
 // ---------------------------------------------------------------------------------------------
 // Peta jalur aman untuk LED strip: jalur terblokir -> merah, jalur aman yang menuju exit -> hijau.
 // ---------------------------------------------------------------------------------------------
+#define ROOM_LINK_WEIGHT 1   // bobot penghubung ruangan -> junction (garis bobot 1 di graph-visualizer.png)
+
 struct SafeMap {
   uint32_t greenMask;       // bit i = jalur i dilewati rute aman ke exit
   uint32_t revMask;         // bit i = arah menuju exit melewati jalur i dari node v ke u (kebalikan tabel EDGES)
   uint8_t  depth[NUM_EDGES];// jumlah jalur dari ujung awal jalur ini sampai exit (1 = jalur menempel ke exit)
   int      numGreen;
   uint16_t isolatedMask;    // bit n = junction n (tempat ruangan) tidak punya rute aman ke exit mana pun
+  int8_t   next[NUM_NODES]; // langkah berikutnya menuju exit terdekat dari tiap node (-1 = exit / tidak ada rute)
+  int8_t   roomExit[8];     // exit tujuan tiap ruangan 0..7 (-1 = terputus)
+  int      roomWeight[8];   // total bobot ruangan -> exit (termasuk ROOM_LINK_WEIGHT), INF jika terputus
 };
 
 // Dijkstra multi-sumber dari SEMUA exit sekaligus (graf tak berarah, jalur terblokir dibuang) memberi
@@ -156,6 +161,8 @@ inline SafeMap computeSafeForest(uint32_t blockedMask) {
   SafeMap m;
   m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
   memset(m.depth, 0, sizeof(m.depth));
+  for (int i = 0; i < NUM_NODES; i++) m.next[i] = -1;
+  for (int r = 0; r < 8; r++) { m.roomExit[r] = -1; m.roomWeight[r] = INF; }
 
   int dist[NUM_NODES], parent[NUM_NODES], hops[NUM_NODES];
   bool visited[NUM_NODES];
@@ -180,9 +187,13 @@ inline SafeMap computeSafeForest(uint32_t blockedMask) {
     }
   }
 
+  for (int n = 0; n < NUM_NODES; n++) m.next[n] = (int8_t)parent[n];
+
   for (int room = 0; room < 8; room++) {
     int start = ROOM_TO_JUNCTION[room];
     if (dist[start] >= INF) { m.isolatedMask |= (1U << start); continue; }   // ruangan ini terputus dari semua exit
+    m.roomWeight[room] = dist[start] + ROOM_LINK_WEIGHT;
+    { int e = start; while (parent[e] >= 0) e = parent[e]; m.roomExit[room] = (int8_t)e; }
     for (int n = start; parent[n] >= 0; n = parent[n]) {                      // telusuri sampai exit
       int idx = findEdgeIndex(n, parent[n]);
       if ((m.greenMask >> idx) & 1) break;                                    // sisa rute sudah ditandai ruangan lain
@@ -200,7 +211,10 @@ inline SafeMap routeToSafeMap(const RouteResult &r) {
   SafeMap m;
   m.greenMask = 0; m.revMask = 0; m.numGreen = 0; m.isolatedMask = 0;
   memset(m.depth, 0, sizeof(m.depth));
+  for (int i = 0; i < NUM_NODES; i++) m.next[i] = -1;
+  for (int k = 0; k < 8; k++) { m.roomExit[k] = -1; m.roomWeight[k] = INF; }
   if (!r.found) return m;
+  for (int k = 0; k + 1 < r.numNodes; k++) m.next[r.nodes[k]] = (int8_t)r.nodes[k + 1];
   for (int k = 0; k < r.numEdges; k++) {
     int idx = r.edgeSeq[k];
     m.greenMask |= (1UL << idx);

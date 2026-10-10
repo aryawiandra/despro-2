@@ -176,50 +176,43 @@ Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus
 
 # KONFIGURASI AKHIR — `dijkstra_strip` dengan 20 sensor api (2 ESP32)
 
-Alur: 20 sensor api (1 per jalur) → **ESP32 #1 sender** (baca sensor, Dijkstra) → ESP-NOW → **ESP32 #2 receiver**
+Alur: 20 sensor api (1 per jalur, langsung ke GPIO, tanpa multiplexer) → **ESP32 #1 sender** (baca sensor, Dijkstra) → ESP-NOW → **ESP32 #2 receiver**
 (LED strip 20 jalur × 40 LED). Jalur rute hijau, jalur kena api dibuang dari graf dan rute otomatis dihitung ulang.
 
-## ESP32 #1 — SENDER (sensor + Dijkstra)
+## ESP32 #1 — SENDER (20 sensor langsung ke GPIO + Dijkstra)
 
-| Pin ESP32 | Ke | Fungsi |
-|---|---|---|
-| GPIO 18 | S0 kedua CD74HC4067 | selektor channel bit 0 |
-| GPIO 19 | S1 kedua mux | bit 1 |
-| GPIO 21 | S2 kedua mux | bit 2 |
-| GPIO 22 | S3 kedua mux | bit 3 |
-| GPIO 34 | SIG (common) **mux 1** | baca sensor jalur #1–#16 |
-| GPIO 35 | SIG (common) **mux 2** | baca sensor jalur #17–#20 |
-| 3V3 / GND | VCC / GND mux dan sensor | lihat catatan daya |
+Tanpa multiplexer: tiap sensor api (pin **DO** modul) disambung ke **1 pin GPIO** sendiri. Tabelnya ada di
+`SENSOR_PIN[]` di `sender.ino` (indeks = nomor jalur − 1).
 
-Pin tiap multiplexer CD74HC4067: `EN` → GND, `VCC` → 3V3 (+ kapasitor 100 nF VCC–GND), `GND` → GND,
-`S0..S3` → GPIO 18/19/21/22 (**dua mux paralel ke pin yang sama**), `SIG` → GPIO 34 (mux 1) / GPIO 35 (mux 2).
-
-**Pull-up wajib:** resistor **10 kΩ dari GPIO 34 ke 3V3** dan **10 kΩ dari GPIO 35 ke 3V3**. GPIO 34/35 tidak punya
-pull-up internal, jadi tanpa resistor ini channel yang kosong membaca acak dan memicu api palsu.
-
-Pemetaan channel mux → jalur (urut sama dengan nomor di `edges`):
-
-| Mux 1 channel | Jalur | Mux 1 channel | Jalur | Mux 2 channel | Jalur |
+| Jalur | Sensor di | GPIO | Jalur | Sensor di | GPIO |
 |---|---|---|---|---|---|
-| C0 | #1 j1-j2 | C8 | #9 j6-j7 | C0 | #17 j2-e1 |
-| C1 | #2 j1-j3 | C9 | #10 j7-j8 | C1 | #18 j4-e2 |
-| C2 | #3 j2-j3 | C10 | #11 j7-j9 | C2 | #19 j6-e2 |
-| C3 | #4 j2-j12 | C11 | #12 j8-j9 | C3 | #20 j12-e3 |
-| C4 | #5 j3-j4 | C12 | #13 j9-j10 | | |
-| C5 | #6 j4-j5 | C13 | #14 j10-j11 | | |
-| C6 | #7 j4-j6 | C14 | #15 j10-j12 | | |
-| C7 | #8 j5-j6 | C15 | #16 j11-j12 | | |
+| #1 | j1-j2 | **4** | #11 | j7-j9 | **25** |
+| #2 | j1-j3 | **13** | #12 | j8-j9 | **26** |
+| #3 | j2-j3 | **14** | #13 | j9-j10 | **27** |
+| #4 | j2-j12 | **16** | #14 | j10-j11 | **32** |
+| #5 | j3-j4 | **17** | #15 | j10-j12 | **33** |
+| #6 | j4-j5 | **18** | #16 | j11-j12 | **34** * |
+| #7 | j4-j6 | **19** | #17 | j2-e1 | **35** * |
+| #8 | j5-j6 | **21** | #18 | j4-e2 | **36 (VP)** * |
+| #9 | j6-j7 | **22** | #19 | j6-e2 | **39 (VN)** * |
+| #10 | j7-j8 | **23** | #20 | j12-e3 | **15** ** |
 
-Sensor (modul flame sensor, 1 per jalur): `VCC` → rel 3,3 V, `GND` → GND, `DO` → channel mux di tabel di atas
-(pin `AO` tidak dipakai). Modul umumnya **aktif LOW** (DO = 0 saat ada api), sesuai `SENSOR_ACTIVE_LEVEL LOW`
-di `sender.ino`. Kalau modulmu aktif HIGH, ubah ke `HIGH`.
+\* GPIO 34, 35, 36, 39 hanya input dan **tidak punya pull-up internal**: pasang resistor **10 kΩ dari pin itu ke 3V3**
+(4 resistor). Sensor lain memakai pull-up internal ESP32 (`INPUT_PULLUP`).
+\** GPIO 15 adalah pin strapping: aman karena sensor aktif LOW dan idle-nya HIGH saat boot (kalau ada api saat boot,
+paling-paling log boot di Serial tidak tampil). Pin yang sengaja **tidak dipakai**: 0, 1, 2, 3, 5, 6–12 (boot, UART USB, flash).
+
+Tiap modul sensor: `VCC` → rel 3,3 V, `GND` → GND, `DO` → GPIO di tabel (pin `AO` tidak dipakai). Modul umumnya
+**aktif LOW** (DO = 0 saat ada api), sesuai `SENSOR_ACTIVE_LEVEL LOW`; kalau modulmu aktif HIGH, ubah ke `HIGH`.
+Cek label pin di board-mu: beberapa board 30-pin tidak memunculkan semua GPIO di atas (mis. 36/39 berlabel VP/VN).
+Pin bisa diganti seenaknya di `SENSOR_PIN[]` (hindari pin terlarang di atas).
 
 **Catatan daya sensor:** 20 modul ≈ 15–20 mA tiap modul ≈ 0,3–0,4 A. Itu terlalu berat untuk regulator 3V3 di board
-ESP32 saat WiFi aktif. Pakai regulator/buck **3,3 V terpisah (≥1 A)** dari catu 5 V untuk rel sensor + mux,
-GND-nya **disambung** ke GND ESP32. Jangan beri sensor 5 V: output DO bisa 5 V dan melebihi batas mux/ESP32 yang 3,3 V.
+ESP32 saat WiFi aktif. Pakai regulator/buck **3,3 V terpisah (≥1 A)** dari catu 5 V untuk rel sensor, GND-nya
+**disambung** ke GND ESP32. Jangan beri sensor 5 V: output DO bisa 5 V dan melebihi batas pin ESP32 (3,3 V).
+Kabel: 20 sensor × 3 kawat; pakai terminal block / PCB bolong untuk rel 3,3 V dan GND bersama.
 
-Sensor yang belum dipasang: biarkan channelnya kosong (pull-up membuatnya terbaca "aman"), atau matikan bit-nya di
-`SENSOR_ENABLED_MASK` (bit i = jalur i+1).
+Sensor yang belum dipasang: set `-1` di `SENSOR_PIN[]` untuk jalur itu (tidak dibaca, selalu "aman").
 
 ## ESP32 #2 — RECEIVER (LED strip)
 
@@ -235,7 +228,8 @@ tiap beberapa jalur. Rantai: DOUT jalur *i* → DIN jalur *i+1*, urut #1–#20, 
 ## Input ruangan asal
 
 Default (`room all`): rute tercepat dari setiap ruangan (0–7, lewat junction j1, j5, j8, j11) ke exit dihitung sekaligus,
-jadi tidak perlu memilih ruangan — 10 jalur hijau saat aman, dan berubah otomatis saat ada api. Untuk melihat rute satu ruangan saja: `room N`
+jadi tidak perlu memilih ruangan — 10 jalur hijau saat aman, dan berubah otomatis saat ada api.
+Serial sender mencetak rute tercepat **tiap ruangan** ke exit terdekatnya beserta bobotnya (bobot jalur + 1 untuk penghubung ruangan), mis. `Ruang 0: j1 > j3 > j2 > e1 (bobot 41)`. Untuk melihat rute satu ruangan saja: `room N`
 (0,1 → j1; 2,3 → j5; 4,5 → j8; 6,7 → j11) atau `start j5`; `room all` kembali ke default.
 Ubah default lewat `DEFAULT_SHOW_ALL` di `sender.ino`. Junction yang terputus dari semua exit dicetak di Serial
 (`Ruangan di junction ini TERPUTUS dari exit`).
@@ -254,12 +248,12 @@ sensor `block j1-j3` / `clear j1-j3` / `reset`.
 
 1. **Sensor:** ketik `sensors` di monitor sender. Semua jalur harus `aman`. Dekatkan api ke satu sensor: baris jalur itu
    jadi `API` dan monitor menampilkan `[SENSOR] api di: ...`. Kalau ada jalur yang `API` padahal tidak ada api: cek pull-up
-   10 kΩ, polaritas `SENSOR_ACTIVE_LEVEL`, atau channel yang salah sambung.
+   10 kΩ (untuk GPIO 34/35/36/39), polaritas `SENSOR_ACTIVE_LEVEL`, atau pin yang salah sambung.
 2. **Rute:** tanpa api, 10 jalur hijau (j1>j3, j3>j2, j2>e1, j5>j4, j4>e2, j8>j7, j7>j6, j6>e2, j11>j12, j12>e3). Dekatkan api ke sensor j1-j3 → jalur #2 **merah**
    dan j1 berpindah ke j1>j2 (hijau) dalam < 1 detik.
 3. **Receiver:** jalur hijau dengan kepala terang mengalir menuju exit; jalur api merah; jalur lain mati.
 4. **Semua tertutup:** api di semua jalan keluar (j2-e1, j4-e2, j6-e2, j12-e3) → `[BAHAYA]` di sender, tidak ada jalur hijau, jalur api merah.
 5. **Link putus:** cabut sender > 2 detik → receiver menampilkan titik biru redup di tiap jalur.
 
-Logic (Dijkstra, scan + debounce sensor, pemetaan mux ke jalur, render receiver) sudah diuji di PC dengan mock;
+Logic (Dijkstra, scan + debounce sensor, pemetaan pin ke jalur, render receiver) sudah diuji di PC dengan mock;
 rangkaian dan strip asli belum diuji di sesi ini.

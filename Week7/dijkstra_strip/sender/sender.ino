@@ -1,6 +1,6 @@
 // WEEK 7 - NAVIGASI DIJKSTRA (LED STRIP) - SENDER (ESP32 #1)
-// Graf 15 node / 20 jalur (lihat graph.h). Tiap jalur punya 1 sensor api (20 sensor, dibaca lewat
-// 2 multiplexer CD74HC4067, sama seperti Week5). Sensor juga bisa disimulasikan lewat teks di
+// Graf 15 node / 20 jalur (lihat graph.h). Tiap jalur punya 1 sensor api (20 sensor, tiap sensor
+// langsung ke 1 pin GPIO, lihat SENSOR_PIN). Sensor juga bisa disimulasikan lewat teks di
 // Serial Monitor; hasil keduanya digabung (OR). Jalur yang kena api dibuang dari graf, lalu Dijkstra
 // dihitung ke exit terdekat dan hasilnya dikirim ke receiver lewat ESP-NOW:
 //   - jalur kena api            -> MERAH
@@ -28,18 +28,37 @@
 #define ESPNOW_CHANNEL    1
 #define SEND_INTERVAL_MS  200   // heartbeat; receiver menganggap link putus jika 2 detik tanpa paket
 
-// ---- Sensor api: 20 sensor lewat 2x CD74HC4067 (rancangan Week5) ----
+// ---- Sensor api: 20 sensor, masing-masing langsung ke 1 pin GPIO (tanpa multiplexer) ----
 #define USE_SENSORS         1
-#define PIN_S0              18   // pin selektor, paralel ke kedua multiplexer
-#define PIN_S1              19
-#define PIN_S2              21
-#define PIN_S3              22
-#define PIN_SIG_MUX1        34   // common (SIG) mux 1 -> jalur #1..#16 (C0..C15). Input-only, butuh pull-up eksternal 10k ke 3V3
-#define PIN_SIG_MUX2        35   // common (SIG) mux 2 -> jalur #17..#20 (C0..C3). Idem
 #define SENSOR_ACTIVE_LEVEL LOW  // level output sensor saat ada api (modul flame sensor umumnya LOW)
-#define SENSOR_ENABLED_MASK 0x000FFFFFUL  // bit i = sensor jalur i+1 dipasang; matikan bit untuk sensor yang belum ada
 #define SENSOR_SCAN_MS      50   // periode scan 20 sensor
 #define SENSOR_CONFIRM      3    // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
+
+// Pin DO sensor tiap jalur. Indeks = nomor jalur - 1 (lihat 'edges'). -1 = sensor jalur itu tidak dipasang.
+// GPIO 34, 35, 36, 39 hanya input dan TIDAK punya pull-up internal -> beri pull-up eksternal 10k ke 3V3.
+// Hindari GPIO 0, 1, 2, 3, 6-12 (boot / UART / flash).
+const int8_t SENSOR_PIN[NUM_EDGES] = {
+   4,  // #1  j1-j2
+  13,  // #2  j1-j3
+  14,  // #3  j2-j3
+  16,  // #4  j2-j12
+  17,  // #5  j3-j4
+  18,  // #6  j4-j5
+  19,  // #7  j4-j6
+  21,  // #8  j5-j6
+  22,  // #9  j6-j7
+  23,  // #10 j7-j8
+  25,  // #11 j7-j9
+  26,  // #12 j8-j9
+  27,  // #13 j9-j10
+  32,  // #14 j10-j11
+  33,  // #15 j10-j12
+  34,  // #16 j11-j12  (input-only, pull-up eksternal)
+  35,  // #17 j2-e1    (input-only, pull-up eksternal)
+  36,  // #18 j4-e2    (input-only, pull-up eksternal)
+  39,  // #19 j6-e2    (input-only, pull-up eksternal)
+  15   // #20 j12-e3   (strapping pin: aman selama idle HIGH saat boot)
+};
 
 uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // broadcast: tidak perlu MAC receiver
 
@@ -68,12 +87,12 @@ unsigned long lastScanMs = 0;
 // ---------- sensor ----------
 void sensorsInit() {
 #if USE_SENSORS
-  pinMode(PIN_S0, OUTPUT);
-  pinMode(PIN_S1, OUTPUT);
-  pinMode(PIN_S2, OUTPUT);
-  pinMode(PIN_S3, OUTPUT);
-  pinMode(PIN_SIG_MUX1, INPUT);   // GPIO34/35 tidak punya pull-up internal -> pull-up eksternal 10k
-  pinMode(PIN_SIG_MUX2, INPUT);
+  for (int i = 0; i < NUM_EDGES; i++) {
+    int pin = SENSOR_PIN[i];
+    if (pin < 0) continue;
+    // 34..39 tidak punya pull-up internal; sisanya pakai pull-up internal sebagai pengaman bila sensor lepas
+    pinMode(pin, (pin >= 34 && pin <= 39) ? INPUT : INPUT_PULLUP);
+  }
 #endif
 }
 
@@ -81,16 +100,10 @@ void sensorsInit() {
 uint32_t readRawSensors() {
   uint32_t raw = 0;
 #if USE_SENSORS
-  for (byte ch = 0; ch < 16; ch++) {
-    digitalWrite(PIN_S0, bitRead(ch, 0));
-    digitalWrite(PIN_S1, bitRead(ch, 1));
-    digitalWrite(PIN_S2, bitRead(ch, 2));
-    digitalWrite(PIN_S3, bitRead(ch, 3));
-    delayMicroseconds(30);   // tunggu mux settle
-    if (digitalRead(PIN_SIG_MUX1) == SENSOR_ACTIVE_LEVEL) raw |= (1UL << ch);
-    if (ch < 4 && digitalRead(PIN_SIG_MUX2) == SENSOR_ACTIVE_LEVEL) raw |= (1UL << (16 + ch));
+  for (int i = 0; i < NUM_EDGES; i++) {
+    int pin = SENSOR_PIN[i];
+    if (pin >= 0 && digitalRead(pin) == SENSOR_ACTIVE_LEVEL) raw |= (1UL << i);
   }
-  raw &= SENSOR_ENABLED_MASK;
 #endif
   return raw;
 }
@@ -137,6 +150,21 @@ void printNodeList(uint16_t mask) {
   if (!any) Serial.print("-");
 }
 
+// Rute tercepat tiap ruangan ke exit terdekatnya (berdasarkan bobot jarak), termasuk bobot penghubung ruangan
+void printRooms() {
+  for (int r = 0; r < 8; r++) {
+    Serial.print("  Ruang "); Serial.print(r); Serial.print(": ");
+    int start = ROOM_TO_JUNCTION[r];
+    if (safe.roomExit[r] < 0) { Serial.println("TERPUTUS dari semua exit"); continue; }
+    for (int n = start; ; n = safe.next[n]) {
+      Serial.print(NODE_NAMES[n]);
+      if (safe.next[n] < 0) break;
+      Serial.print(" > ");
+    }
+    Serial.print("  (bobot "); Serial.print(safe.roomWeight[r]); Serial.println(")");
+  }
+}
+
 void printRoute() {
   Serial.print("Mode: ");
   if (showAll) Serial.print("semua ruangan");
@@ -170,6 +198,7 @@ void printRoute() {
     any = true;
   }
   Serial.println();
+  if (showAll) printRooms();
   if (showAll && safe.isolatedMask) {
     Serial.print("Ruangan di junction ini TERPUTUS dari exit: ");
     printNodeList(safe.isolatedMask);
