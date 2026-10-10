@@ -171,3 +171,91 @@ Di sender: `room 0`, lalu `block j1-j3` → rute pindah ke j1>j2>e1 sehingga jal
 (jalur #17 ada di LED 641–680, tidak terlihat). `reset` → jalur #1 mati lagi.
 
 Logic diuji di PC (Dijkstra, urutan/arah rute, render pixel receiver, link putus); belum diuji di ESP32 asli.
+
+---
+
+# KONFIGURASI AKHIR — `dijkstra_strip` dengan 20 sensor api (2 ESP32)
+
+Alur: 20 sensor api (1 per jalur) → **ESP32 #1 sender** (baca sensor, Dijkstra) → ESP-NOW → **ESP32 #2 receiver**
+(LED strip 20 jalur × 40 LED). Jalur rute hijau, jalur kena api dibuang dari graf dan rute otomatis dihitung ulang.
+
+## ESP32 #1 — SENDER (sensor + Dijkstra)
+
+| Pin ESP32 | Ke | Fungsi |
+|---|---|---|
+| GPIO 18 | S0 kedua CD74HC4067 | selektor channel bit 0 |
+| GPIO 19 | S1 kedua mux | bit 1 |
+| GPIO 21 | S2 kedua mux | bit 2 |
+| GPIO 22 | S3 kedua mux | bit 3 |
+| GPIO 34 | SIG (common) **mux 1** | baca sensor jalur #1–#16 |
+| GPIO 35 | SIG (common) **mux 2** | baca sensor jalur #17–#20 |
+| 3V3 / GND | VCC / GND mux dan sensor | lihat catatan daya |
+
+Pin tiap multiplexer CD74HC4067: `EN` → GND, `VCC` → 3V3 (+ kapasitor 100 nF VCC–GND), `GND` → GND,
+`S0..S3` → GPIO 18/19/21/22 (**dua mux paralel ke pin yang sama**), `SIG` → GPIO 34 (mux 1) / GPIO 35 (mux 2).
+
+**Pull-up wajib:** resistor **10 kΩ dari GPIO 34 ke 3V3** dan **10 kΩ dari GPIO 35 ke 3V3**. GPIO 34/35 tidak punya
+pull-up internal, jadi tanpa resistor ini channel yang kosong membaca acak dan memicu api palsu.
+
+Pemetaan channel mux → jalur (urut sama dengan nomor di `edges`):
+
+| Mux 1 channel | Jalur | Mux 1 channel | Jalur | Mux 2 channel | Jalur |
+|---|---|---|---|---|---|
+| C0 | #1 j1-j2 | C8 | #9 j6-j7 | C0 | #17 j2-e1 |
+| C1 | #2 j1-j3 | C9 | #10 j7-j8 | C1 | #18 j4-e2 |
+| C2 | #3 j2-j3 | C10 | #11 j7-j9 | C2 | #19 j6-e2 |
+| C3 | #4 j2-j12 | C11 | #12 j8-j9 | C3 | #20 j12-e3 |
+| C4 | #5 j3-j4 | C12 | #13 j9-j10 | | |
+| C5 | #6 j4-j5 | C13 | #14 j10-j11 | | |
+| C6 | #7 j4-j6 | C14 | #15 j10-j12 | | |
+| C7 | #8 j5-j6 | C15 | #16 j11-j12 | | |
+
+Sensor (modul flame sensor, 1 per jalur): `VCC` → rel 3,3 V, `GND` → GND, `DO` → channel mux di tabel di atas
+(pin `AO` tidak dipakai). Modul umumnya **aktif LOW** (DO = 0 saat ada api), sesuai `SENSOR_ACTIVE_LEVEL LOW`
+di `sender.ino`. Kalau modulmu aktif HIGH, ubah ke `HIGH`.
+
+**Catatan daya sensor:** 20 modul ≈ 15–20 mA tiap modul ≈ 0,3–0,4 A. Itu terlalu berat untuk regulator 3V3 di board
+ESP32 saat WiFi aktif. Pakai regulator/buck **3,3 V terpisah (≥1 A)** dari catu 5 V untuk rel sensor + mux,
+GND-nya **disambung** ke GND ESP32. Jangan beri sensor 5 V: output DO bisa 5 V dan melebihi batas mux/ESP32 yang 3,3 V.
+
+Sensor yang belum dipasang: biarkan channelnya kosong (pull-up membuatnya terbaca "aman"), atau matikan bit-nya di
+`SENSOR_ENABLED_MASK` (bit i = jalur i+1).
+
+## ESP32 #2 — RECEIVER (LED strip)
+
+| Pin ESP32 | Ke |
+|---|---|
+| GPIO 5 | resistor 330 Ω → DIN strip jalur #1 (awal rantai) |
+| GND | GND strip dan GND catu 5 V (satu ground) |
+
+Strip: +5V dari catu 5 V (30 A di proposal), kapasitor 1000 µF antara +5V dan GND di awal strip, suntik +5V/GND
+tiap beberapa jalur. Rantai: DOUT jalur *i* → DIN jalur *i+1*, urut #1–#20, tiap jalur 40 LED
+(`EDGE_LEN[]`, `EDGE_REVERSED[]` bila ada strip terpasang kebalikan). ESP32 receiver cukup dari USB.
+
+## Input ruangan asal
+
+Sensor hanya memberi tahu **jalur mana yang kena api**. Dari ruangan mana orang dipandu ditentukan lewat
+`room N` di Serial Monitor sender (default `DEFAULT_ROOM` di `sender.ino`). Ruangan 0,1 → j1; 2,3 → j5; 4,5 → j8; 6,7 → j11.
+
+## Upload dan jalankan
+
+```
+cd "Week7/dijkstra_strip/receiver" && pio run -t upload      # colok ESP32 receiver
+cd "Week7/dijkstra_strip/sender"   && pio run -t upload && pio device monitor   # colok ESP32 sender
+```
+
+Perintah di monitor sender: `sensors` (bacaan mentah 20 sensor), `edges`, `list`, `room N`, serta simulasi tanpa
+sensor `block j1-j3` / `clear j1-j3` / `reset`.
+
+## Urutan tes sebelum demo
+
+1. **Sensor:** ketik `sensors` di monitor sender. Semua jalur harus `aman`. Dekatkan api ke satu sensor: baris jalur itu
+   jadi `API` dan monitor menampilkan `[SENSOR] api di: ...`. Kalau ada jalur yang `API` padahal tidak ada api: cek pull-up
+   10 kΩ, polaritas `SENSOR_ACTIVE_LEVEL`, atau channel yang salah sambung.
+2. **Rute:** `room 0` lalu dekatkan api ke sensor j1-j3 → rute berpindah ke j1>j2>e1 dalam < 1 detik.
+3. **Receiver:** jalur rute hijau dengan kepala terang berjalan dari ruangan menuju exit; jalur lain mati.
+4. **Semua tertutup:** api di semua jalan keluar → `[BAHAYA]` di sender dan semua strip mati.
+5. **Link putus:** cabut sender > 2 detik → receiver menampilkan titik biru redup di tiap jalur.
+
+Logic (Dijkstra, scan + debounce sensor, pemetaan mux ke jalur, render receiver) sudah diuji di PC dengan mock;
+rangkaian dan strip asli belum diuji di sesi ini.
