@@ -403,23 +403,23 @@ Angka di atas perkiraan dari datasheet, bukan hasil ukur.
 
 ---
 
-# UJI 3 JALUR, INPUT TEKS (`dijkstra_3jalur/`)
+# UJI 3 JALUR (`dijkstra_3jalur/`)
 
-Turunan `dijkstra_5jalur/`: **3 strip LED, 3 sensor virtual, tanpa sensor fisik**. Semua input api lewat teks di Serial Monitor
-sender (115200, Newline). Dijkstra tetap memakai peta lengkap 20 jalur; kode 5 jalur dan 20 jalur tidak diubah.
+Turunan `dijkstra_5jalur/`: **3 strip LED dan 3 sensor api asli (pin AO)**. Input teks di Serial Monitor sender
+(115200, Newline) tetap bisa dipakai bersamaan dengan sensor. Dijkstra memakai peta lengkap 20 jalur; kode 5 jalur dan
+20 jalur tidak diubah.
 
-| Sensor virtual | Jalur | LED | Pin strip (receiver) |
-|---|---|---|---|
-| 1 | #3 j2-j3 | 7 | GPIO 4 → 330 Ω → DIN |
-| 2 | #18 j4-e2 | 6 | GPIO 14 → 330 Ω → DIN |
-| 3 | #19 j6-e2 | 5 | GPIO 18 → 330 Ω → DIN |
+| Sensor | Jalur | LED | Pin strip (receiver) | Pin sensor AO (sender) |
+|---|---|---|---|---|
+| 1 | #3 j2-j3 | 7 | **GPIO 5 (D5)** → 330 Ω → DIN | **GPIO 32** |
+| 2 | #18 j4-e2 | 6 | **GPIO 13 (D13)** → 330 Ω → DIN | **GPIO 33** |
+| 3 | #19 j6-e2 | 5 | **GPIO 14 (D14)** → 330 Ω → DIN | **GPIO 34** |
 
-Total 18 LED. Wiring receiver sama seperti `dijkstra_5jalur` (GND bersama, +5 V dari USB, kapasitor 470–1000 µF).
-Sender tidak perlu wiring apa pun (cukup USB).
+Total 18 LED. Receiver: GND bersama, +5 V dari USB, kapasitor 470–1000 µF. Sender: VCC sensor 3,3 V (bukan 5 V), GND bersama,
+pin AO ke GPIO 32/33/34 (ADC1, tanpa pull-up). Api bila nilai ADC < 1500, aman lagi bila > 1800 (`sensors` menampilkan nilai untuk kalibrasi).
 
-Perintah tambahan: `sensor <1-3> 1` (api), `sensor <1-3> 0` (padam), `sensor <1-3>` (toggle), `sensors` (status).
-Perintah lama tetap ada: `room all`, `room N`, `block j6-j7`, `clear`, `reset`, `edges`, `list`.
-Contoh: `sensor 3 1` → jalur #19 merah berkedip, ruang 4,5 pindah rute. `reset` → semua padam.
+Perintah: `sensor <1-3> 1|0` (simulasi teks), `sensors` (nilai ADC + status), `room all`, `room N`, `block j6-j7`, `clear`, `reset`, `edges`, `list`.
+Contoh: `sensor 3 1` → jalur #19 merah berkedip, ruang 4,5 pindah rute. `reset` → hapus simulasi teks.
 
 Upload: `cd Week7/dijkstra_3jalur/receiver && pio run -t upload` (idem `sender`).
-Sintaks sender sudah dicek dengan compiler PC (mock Arduino); belum dikompilasi PlatformIO dan belum diuji di ESP32 dari sesi ini.
+Sintaks sender dicek dengan compiler PC (mock Arduino); belum dikompilasi PlatformIO dan belum diuji di ESP32 dari sesi ini.

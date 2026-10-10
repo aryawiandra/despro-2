@@ -1,8 +1,8 @@
 // WEEK 7 - NAVIGASI DIJKSTRA, UJI 3 JALUR (LED STRIP) - SENDER (ESP32 #1)
 // Graf dan Dijkstra tetap peta LENGKAP 20 jalur (graph.h). Strip LED fisik hanya ada di 3 jalur
-// (lihat receiver): #3 j2-j3, #18 j4-e2, #19 j6-e2. TIDAK ada sensor fisik: 3 sensor api disimulasikan
-// lewat teks di Serial Monitor (sensor 1/2/3 = jalur #3/#18/#19); jalur lain juga bisa lewat block/clear.
-// Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari SETIAP ruangan ke exit terdekat,
+// (lihat receiver): #3 j2-j3, #18 j4-e2, #19 j6-e2. Sensor api asli ada di 3 jalur itu (pin AO, GPIO 32/33/34).
+// Input teks di Serial Monitor tetap bisa dipakai bersamaan (sensor virtual / block). Hasil sensor dan teks
+// digabung (OR). Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari SETIAP ruangan ke exit terdekat,
 // lalu hasil seluruh peta dikirim ke receiver lewat ESP-NOW:
 //   - jalur kena api            -> MERAH BERKEDIP
 //   - jalur aman menuju exit    -> HIJAU, dengan nyala sekuensial searah exit
@@ -13,13 +13,13 @@
 //   room all          -> rute tercepat dari semua ruangan ke exit (default)
 //   room <0-7>        -> hanya rute satu ruangan (0,1=j1  2,3=j5  4,5=j8  6,7=j11)
 //   start <node>      -> atau langsung pilih node asal, mis. start j5
-//   sensor <1-3> 1|0  -> sensor virtual 1/2/3 (jalur #3 j2-j3 / #18 j4-e2 / #19 j6-e2): 1 = api, 0 = padam
+//   sensor <1-3> 1|0  -> simulasi teks sensor 1/2/3 (jalur #3 j2-j3 / #18 j4-e2 / #19 j6-e2): 1 = api, 0 = padam
 //   sensor <1-3>      -> toggle sensor itu
 //   block <jalur>     -> simulasi api di jalur mana pun, mis. block j6-j7   atau   block 9
 //   clear <jalur>     -> padamkan simulasi, mis. clear j6-j7
-//   reset             -> semua sensor virtual dan simulasi padam
+//   reset             -> hapus semua simulasi teks (sensor asli tidak terpengaruh)
 //   edges             -> daftar 20 jalur (nomor, nama, bobot, sensor, status)
-//   sensors           -> status 3 sensor virtual
+//   sensors           -> nilai ADC (AO) 3 sensor + status, untuk kalibrasi ambang
 //   list              -> status + rute sekarang
 //   help
 #include <WiFi.h>
@@ -38,9 +38,16 @@
 #define REQUEST_MAGIC     0xA5  // paket 1 byte dari receiver: "kirim status sekarang"
 #define SEND_ERROR_PRINT_MS 5000 // pesan SEND ERROR dibatasi 1x per 5 detik
 
-// ---- 3 sensor api VIRTUAL (input teks, tanpa sensor fisik). Nomor jalur (1-20) tiap sensor ----
-#define NUM_SENSORS 3
-const uint8_t SENSOR_EDGE[NUM_SENSORS] = { 3, 18, 19 };   // sensor 1 = #3 j2-j3, 2 = #18 j4-e2, 3 = #19 j6-e2
+// ---- 3 sensor api asli, dibaca lewat pin AO (analog). Sensor 1/2/3 = jalur #3 / #18 / #19 ----
+#define NUM_SENSORS         3
+#define SENSOR_FIRE_BELOW   1500  // nilai ADC (0-4095) DI BAWAH ini = ada api (nilai dari Week4/kodeUpdated.cpp)
+#define SENSOR_CLEAR_ABOVE  1800  // jalur dianggap aman lagi bila nilai naik DI ATAS ini (histeresis anti-kedip)
+#define SENSOR_SAMPLES      8     // rata-rata N pembacaan ADC tiap scan (meredam noise)
+#define SENSOR_SCAN_MS      50    // periode scan sensor
+#define SENSOR_CONFIRM      3     // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
+const uint8_t SENSOR_EDGE[NUM_SENSORS] = { 3, 18, 19 };   // nomor jalur tiap sensor
+// WAJIB pin ADC1 (GPIO 32-36, 39): ADC2 tidak bisa dibaca analog saat WiFi/ESP-NOW aktif. VCC sensor 3,3 V.
+const uint8_t SENSOR_PIN[NUM_SENSORS]  = { 32, 33, 34 };  // pin AO sensor 1/2/3
 
 uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // broadcast: tidak perlu MAC receiver
 
@@ -59,14 +66,37 @@ bool showAll = DEFAULT_SHOW_ALL;
 int startRoom = DEFAULT_ROOM;
 int startNode = ROOM_TO_JUNCTION[DEFAULT_ROOM];
 uint32_t simMask = 0;      // api dari teks Serial (simulasi)
-uint32_t sensorMask = 0;   // api dari 3 sensor virtual (input teks)
+uint32_t sensorMask = 0;   // api dari sensor asli (sudah di-debounce)
 uint32_t blockedMask = 0;  // gabungan keduanya, dipakai Dijkstra
+unsigned long lastScanMs = 0;
 RouteResult route;         // rute satu ruangan (mode 'room N')
 SafeMap safe;              // hasil akhir yang dikirim ke receiver
 unsigned long lastSendMs = 0;
 uint8_t       pendingSends = 0;      // sisa pengiriman ulang
 unsigned long nextSendMs = 0;
 volatile bool requestFlag = false;   // diisi callback saat receiver meminta data
+
+// Rata-rata beberapa pembacaan ADC (0..4095) pada pin AO
+int readAdc(int pin) {
+  long sum = 0;
+  for (int n = 0; n < SENSOR_SAMPLES; n++) sum += analogRead(pin);
+  return (int)(sum / SENSOR_SAMPLES);
+}
+
+// Scan + debounce dengan histeresis. Return true jika sensorMask berubah.
+bool scanSensors() {
+  static uint8_t cnt[NUM_SENSORS];
+  bool changed = false;
+  for (int k = 0; k < NUM_SENSORS; k++) {
+    int i = SENSOR_EDGE[k] - 1;
+    int v = readAdc(SENSOR_PIN[k]);
+    bool cur = (sensorMask >> i) & 1;
+    bool now = cur ? (v < SENSOR_CLEAR_ABOVE) : (v < SENSOR_FIRE_BELOW);
+    if (now == cur) { cnt[k] = 0; continue; }
+    if (++cnt[k] >= SENSOR_CONFIRM) { sensorMask ^= (1UL << i); cnt[k] = 0; changed = true; }
+  }
+  return changed;
+}
 
 void sendRoute() {
   RoutePacket pkt;
@@ -176,7 +206,7 @@ void printEdges() {
     Serial.print("#"); Serial.print(i + 1); Serial.print("  ");
     printEdgeName(i);
     Serial.print("  bobot "); Serial.print(EDGES[i].weight);
-    for (int k = 0; k < NUM_SENSORS; k++) if (SENSOR_EDGE[k] == i + 1) { Serial.print("  [sensor "); Serial.print(k + 1); Serial.print("]"); }
+    for (int k = 0; k < NUM_SENSORS; k++) if (SENSOR_EDGE[k] == i + 1) { Serial.print("  [sensor "); Serial.print(k + 1); Serial.print(" GPIO "); Serial.print(SENSOR_PIN[k]); Serial.print("]"); }
     if ((sensorMask >> i) & 1) Serial.print("  API(sensor)");
     if ((simMask >> i) & 1) Serial.print("  API(teks)");
     if ((safe.greenMask >> i) & 1) Serial.print("  HIJAU");
@@ -209,7 +239,11 @@ void printSensors() {
     int i = SENSOR_EDGE[k] - 1;
     Serial.print("Sensor "); Serial.print(k + 1); Serial.print(" = jalur #"); Serial.print(i + 1); Serial.print(" ");
     printEdgeName(i);
-    Serial.println((sensorMask >> i) & 1 ? "  API" : "  aman");
+    Serial.print(" AO GPIO "); Serial.print(SENSOR_PIN[k]);
+    Serial.print(" nilai="); Serial.print(readAdc(SENSOR_PIN[k]));
+    Serial.print(" (api bila < "); Serial.print(SENSOR_FIRE_BELOW);
+    Serial.print(") sensor="); Serial.print((sensorMask >> i) & 1 ? "API" : "aman");
+    Serial.print(" teks="); Serial.println((simMask >> i) & 1 ? "API" : "aman");
   }
 }
 
@@ -262,15 +296,14 @@ void handleCommand(String line) {
     else                              simMask &= ~(1UL << e);
   } else if (cmd == "reset" || cmd == "0") {
     simMask = 0;
-    sensorMask = 0;
   } else if (cmd == "sensor") {
     int sp2 = arg.indexOf(' ');
     int k = (sp2 < 0 ? arg : arg.substring(0, sp2)).toInt();
     if (k < 1 || k > NUM_SENSORS) { Serial.println("Pakai: sensor <1-3> 1|0"); return; }
     uint32_t bit = 1UL << (SENSOR_EDGE[k - 1] - 1);
-    if (sp2 < 0)                              sensorMask ^= bit;
-    else if (arg.substring(sp2 + 1).toInt())  sensorMask |= bit;
-    else                                      sensorMask &= ~bit;
+    if (sp2 < 0)                              simMask ^= bit;
+    else if (arg.substring(sp2 + 1).toInt())  simMask |= bit;
+    else                                      simMask &= ~bit;
   } else if (cmd == "sensors") {
     printSensors();
     return;
@@ -312,6 +345,9 @@ void setup() {
 
   esp_now_register_recv_cb(reinterpret_cast<esp_now_recv_cb_t>(onDataRecv));
 
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db);
+
   Serial.print("SENDER Dijkstra siap. MAC: ");
   Serial.println(WiFi.macAddress());
   printHelp();
@@ -322,6 +358,19 @@ void setup() {
 
 void loop() {
   if (Serial.available()) handleCommand(Serial.readStringUntil('\n'));
+
+  if (millis() - lastScanMs >= SENSOR_SCAN_MS) {
+    lastScanMs = millis();
+    if (scanSensors()) {
+      Serial.print("[SENSOR] api di: ");
+      bool any = false;
+      for (int i = 0; i < NUM_EDGES; i++)
+        if ((sensorMask >> i) & 1) { if (any) Serial.print(", "); printEdgeName(i); any = true; }
+      if (!any) Serial.print("-");
+      Serial.println();
+      recompute();
+    }
+  }
 
   if (requestFlag) { requestFlag = false; requestSend(); }
 

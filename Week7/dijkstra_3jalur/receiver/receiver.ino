@@ -30,12 +30,12 @@
 #define BLINK_MS          400    // lama merah menyala / padam saat berkedip
 
 // Satu baris = satu strip: nomor jalur, pin data (lewat resistor 330 ohm ke DIN), jumlah LED, arah terbalik?
-// Pin aman untuk output: 4, 5, 13, 14, 18, 19, 21-23, 25-27, 32, 33 (GPIO 16 dan 17 berlabel RX2 / TX2 di banyak board).
+// Pin yang dipakai: D5, D13, D14 (GPIO 5, 13, 14).
 struct StripCfg { uint8_t edge; int8_t pin; uint16_t len; bool reversed; };
 const StripCfg STRIPS[NUM_STRIPS] = {
-  {  3,  4, 7, false },   // #3  j2-j3  -> GPIO 4,  7 LED
-  { 18, 14, 6, false },   // #18 j4-e2  -> GPIO 14, 6 LED
-  { 19, 18, 5, false }    // #19 j6-e2  -> GPIO 18, 5 LED
+  {  3,  5, 7, false },   // #3  j2-j3  -> GPIO 5,  7 LED
+  { 18, 13, 6, false },   // #18 j4-e2  -> GPIO 13, 6 LED
+  { 19, 14, 5, false }    // #19 j6-e2  -> GPIO 14, 5 LED
 };
 
 typedef struct __attribute__((packed)) {
