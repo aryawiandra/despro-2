@@ -1,8 +1,9 @@
 // WEEK 7 - NAVIGASI DIJKSTRA, UJI 6 JALUR (LED STRIP) - SENDER (ESP32 #1)
 // Graf dan Dijkstra tetap peta LENGKAP 20 jalur (graph.h). Strip LED fisik hanya ada di 6 jalur
 // (lihat receiver): #3 j2-j3, #18 j4-e2, #19 j6-e2, #11 j7-j9, #15 j10-j12, #20 j12-e3.
-// Sensor api asli ada di 6 jalur itu: sensor 1-4 pin AO (GPIO 32/33/34/35), sensor 5-6 pin DO digital (GPIO 25/26).
-// Board ini hanya punya GPIO s.d. 35 (tanpa VP/VN), dan ADC2 tidak bisa dibaca saat ESP-NOW aktif, jadi cuma 4 AO.
+// Sensor api asli ada di 6 jalur itu, SEMUA dibaca lewat pin AO (analog): sensor 1-3 langsung di GPIO 32/33/34,
+// sensor 4-6 lewat multiplexer analog CD74HC4067 (sinyal Z ke GPIO 35, select S0/S1 ke GPIO 25/26).
+// Board ini hanya punya GPIO s.d. 35 (tanpa VP/VN) dan ADC2 tidak bisa dibaca saat ESP-NOW aktif, jadi cuma 4 pin ADC1.
 // Input teks di Serial Monitor tetap bisa dipakai bersamaan (sensor virtual / block). Hasil sensor dan teks
 // digabung (OR). Jalur yang kena api dibuang dari graf, Dijkstra dihitung dari SETIAP ruangan ke exit terdekat,
 // lalu hasil seluruh peta dikirim ke receiver lewat ESP-NOW:
@@ -48,12 +49,14 @@
 #define SENSOR_SCAN_MS      50    // periode scan sensor
 #define SENSOR_CONFIRM      3     // butuh N scan berturut-turut untuk mengubah status (anti-noise, ~150 ms)
 const uint8_t SENSOR_EDGE[NUM_SENSORS] = { 3, 18, 19, 11, 15, 20 };   // nomor jalur tiap sensor
-// WAJIB pin ADC1 (GPIO 32-36, 39): ADC2 tidak bisa dibaca analog saat WiFi/ESP-NOW aktif. VCC sensor 3,3 V.
-const uint8_t SENSOR_PIN[NUM_SENSORS]  = { 32, 33, 34, 35, 25, 26 };  // sensor 1-4: pin AO (ADC1); sensor 5-6: pin DO
-// Sensor 5-6 dibaca DIGITAL dari pin DO modul (tanpa ADC, aman dengan ESP-NOW). Ambang api diatur potensiometer
-// di modul. Sebagian besar modul LM393: DO = LOW saat ada api (ubah SENSOR_DIGITAL_FIRE_LEVEL bila terbalik).
-const bool SENSOR_DIGITAL[NUM_SENSORS] = { false, false, false, false, true, true };
-#define SENSOR_DIGITAL_FIRE_LEVEL LOW
+// WAJIB pin ADC1 (GPIO 32-35 pada board ini): ADC2 tidak bisa dibaca analog saat WiFi/ESP-NOW aktif. VCC sensor 3,3 V.
+// Pin ADC yang dibaca untuk tiap sensor. Sensor 4-6 memakai pin yang sama (MUX_SIG_PIN = keluaran Z multiplexer).
+#define MUX_SIG_PIN         35    // keluaran Z (SIG) CD74HC4067 -> GPIO 35 (ADC1, hanya-input)
+#define MUX_S0_PIN          25    // select S0 -> GPIO 25 (output digital)
+#define MUX_S1_PIN          26    // select S1 -> GPIO 26 (output digital). S2, S3, dan EN/E dihubungkan ke GND
+#define MUX_SETTLE_US       50    // waktu tunggu sinyal mux stabil setelah ganti kanal
+const uint8_t SENSOR_PIN[NUM_SENSORS]    = { 32, 33, 34, MUX_SIG_PIN, MUX_SIG_PIN, MUX_SIG_PIN };  // pin ADC1 per sensor
+const int8_t  SENSOR_MUX_CH[NUM_SENSORS] = { -1, -1, -1, 0, 1, 2 };   // -1 = langsung ke pin; >=0 = kanal mux (C0, C1, C2)
 
 uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // broadcast: tidak perlu MAC receiver
 
@@ -82,11 +85,15 @@ uint8_t       pendingSends = 0;      // sisa pengiriman ulang
 unsigned long nextSendMs = 0;
 volatile bool requestFlag = false;   // diisi callback saat receiver meminta data
 
-// Rata-rata beberapa pembacaan ADC (0..4095) pada pin AO
-// Pembacaan mentah sensor k: nilai ADC (analog) atau status DO (digital). true = ada api menurut pembacaan ini
-bool digitalFire(int k) { return digitalRead(SENSOR_PIN[k]) == SENSOR_DIGITAL_FIRE_LEVEL; }
-
-int readAdc(int pin) {
+// Rata-rata beberapa pembacaan ADC (0..4095) sensor k. Sensor di mux: pilih kanal dulu, tunggu stabil, buang 1 bacaan
+int readAdc(int k) {
+  int pin = SENSOR_PIN[k];
+  if (SENSOR_MUX_CH[k] >= 0) {
+    digitalWrite(MUX_S0_PIN, SENSOR_MUX_CH[k] & 1);
+    digitalWrite(MUX_S1_PIN, (SENSOR_MUX_CH[k] >> 1) & 1);
+    delayMicroseconds(MUX_SETTLE_US);
+    analogRead(pin);   // bacaan pertama setelah ganti kanal dibuang
+  }
   long sum = 0;
   for (int n = 0; n < SENSOR_SAMPLES; n++) sum += analogRead(pin);
   return (int)(sum / SENSOR_SAMPLES);
@@ -99,13 +106,8 @@ bool scanSensors() {
   for (int k = 0; k < NUM_SENSORS; k++) {
     int i = SENSOR_EDGE[k] - 1;
     bool cur = (sensorMask >> i) & 1;
-    bool now;
-    if (SENSOR_DIGITAL[k]) {
-      now = digitalFire(k);
-    } else {
-      int v = readAdc(SENSOR_PIN[k]);
-      now = cur ? (v < SENSOR_CLEAR_ABOVE) : (v < SENSOR_FIRE_BELOW);
-    }
+    int v = readAdc(k);
+    bool now = cur ? (v < SENSOR_CLEAR_ABOVE) : (v < SENSOR_FIRE_BELOW);
     if (now == cur) { cnt[k] = 0; continue; }
     if (++cnt[k] >= SENSOR_CONFIRM) { sensorMask ^= (1UL << i); cnt[k] = 0; changed = true; }
   }
@@ -220,7 +222,7 @@ void printEdges() {
     Serial.print("#"); Serial.print(i + 1); Serial.print("  ");
     printEdgeName(i);
     Serial.print("  bobot "); Serial.print(EDGES[i].weight);
-    for (int k = 0; k < NUM_SENSORS; k++) if (SENSOR_EDGE[k] == i + 1) { Serial.print("  [sensor "); Serial.print(k + 1); Serial.print(" GPIO "); Serial.print(SENSOR_PIN[k]); Serial.print("]"); }
+    for (int k = 0; k < NUM_SENSORS; k++) if (SENSOR_EDGE[k] == i + 1) { Serial.print("  [sensor "); Serial.print(k + 1); Serial.print(" GPIO "); Serial.print(SENSOR_PIN[k]); if (SENSOR_MUX_CH[k] >= 0) { Serial.print(" mux C"); Serial.print(SENSOR_MUX_CH[k]); } Serial.print("]"); }
     if ((sensorMask >> i) & 1) Serial.print("  API(sensor)");
     if ((simMask >> i) & 1) Serial.print("  API(teks)");
     if ((safe.greenMask >> i) & 1) Serial.print("  HIJAU");
@@ -253,15 +255,10 @@ void printSensors() {
     int i = SENSOR_EDGE[k] - 1;
     Serial.print("Sensor "); Serial.print(k + 1); Serial.print(" = jalur #"); Serial.print(i + 1); Serial.print(" ");
     printEdgeName(i);
-    if (SENSOR_DIGITAL[k]) {
-      Serial.print(" DO GPIO "); Serial.print(SENSOR_PIN[k]);
-      Serial.print(" pin="); Serial.print(digitalRead(SENSOR_PIN[k]) ? "HIGH" : "LOW");
-      Serial.print(" (api bila "); Serial.print(SENSOR_DIGITAL_FIRE_LEVEL == LOW ? "LOW" : "HIGH");
-    } else {
-      Serial.print(" AO GPIO "); Serial.print(SENSOR_PIN[k]);
-      Serial.print(" nilai="); Serial.print(readAdc(SENSOR_PIN[k]));
-      Serial.print(" (api bila < "); Serial.print(SENSOR_FIRE_BELOW);
-    }
+    Serial.print(" AO GPIO "); Serial.print(SENSOR_PIN[k]);
+    if (SENSOR_MUX_CH[k] >= 0) { Serial.print(" (mux C"); Serial.print(SENSOR_MUX_CH[k]); Serial.print(")"); }
+    Serial.print(" nilai="); Serial.print(readAdc(k));
+    Serial.print(" (api bila < "); Serial.print(SENSOR_FIRE_BELOW);
     Serial.print(") sensor="); Serial.print((sensorMask >> i) & 1 ? "API" : "aman");
     Serial.print(" teks="); Serial.println((simMask >> i) & 1 ? "API" : "aman");
   }
@@ -367,7 +364,8 @@ void setup() {
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
-  for (int k = 0; k < NUM_SENSORS; k++) if (SENSOR_DIGITAL[k]) pinMode(SENSOR_PIN[k], INPUT);
+  pinMode(MUX_S0_PIN, OUTPUT);
+  pinMode(MUX_S1_PIN, OUTPUT);
 
   Serial.print("SENDER Dijkstra siap. MAC: ");
   Serial.println(WiFi.macAddress());

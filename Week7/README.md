@@ -431,21 +431,35 @@ Sintaks sender dicek dengan compiler PC (mock Arduino); belum dikompilasi Platfo
 Turunan `dijkstra_3jalur/` (kode 3 jalur tidak diubah): **6 strip LED dan 6 sensor api asli (pin AO)**. Power supply 5 V sudah bisa dipakai.
 Tiga jalur pertama memakai pin yang sama dengan uji 3 jalur, jadi wiring lama tidak perlu dibongkar; tiga jalur baru ditambahkan.
 
-| Sensor | Jalur | LED | Pin strip (receiver) | Pin sensor (sender) | Keterangan |
+| Sensor | Jalur | LED | Pin strip (receiver) | Pin sensor AO (sender) | Keterangan |
 |---|---|---|---|---|---|
 | 1 | #3 j2-j3 | 7 | **GPIO 5 (D5)** → 330 Ω → DIN | **GPIO 32** | sama dengan uji 3 jalur |
 | 2 | #18 j4-e2 | 6 | **GPIO 13 (D13)** → 330 Ω → DIN | **GPIO 33** | sama dengan uji 3 jalur |
 | 3 | #19 j6-e2 | 5 | **GPIO 14 (D14)** → 330 Ω → DIN | **GPIO 34** | sama dengan uji 3 jalur |
-| 4 | #11 j7-j9 | 8 | **GPIO 4 (D4)** → 330 Ω → DIN | **GPIO 35** (AO) | baru |
-| 5 | #15 j10-j12 | 8 | **GPIO 18 (D18)** → 330 Ω → DIN | **GPIO 25** (DO digital) | baru |
-| 6 | #20 j12-e3 | 5 | **GPIO 19 (D19)** → 330 Ω → DIN | **GPIO 26** (DO digital) | baru, exit e3 |
+| 4 | #11 j7-j9 | 8 | **GPIO 4 (D4)** → 330 Ω → DIN | mux **C0** | baru |
+| 5 | #15 j10-j12 | 8 | **GPIO 18 (D18)** → 330 Ω → DIN | mux **C1** | baru |
+| 6 | #20 j12-e3 | 5 | **GPIO 19 (D19)** → 330 Ω → DIN | mux **C2** | baru, exit e3 |
 
 Total 39 LED. Perkiraan arus terburuk (merah semua, `LED_BRIGHTNESS` 60) ±0,5 A, diskalakan dari estimasi 0,45 A untuk 34 LED, bukan hasil ukur.
-Strip dicatu dari power supply 5 V dengan GND bersama ESP32 dan kapasitor 470–1000 µF; sensor VCC 3,3 V. Board hanya punya GPIO sampai 35 (tanpa VP/VN = GPIO 36/39) dan ADC2 tidak bisa dibaca saat ESP-NOW aktif, jadi pin AO (ADC1) cuma
-GPIO 32, 33, 34, 35 untuk sensor 1-4. Sensor 5 dan 6 dibaca **digital dari pin DO** modul (GPIO 25 dan 26): tanpa ADC, ambang api diatur
-dengan potensiometer di modul (putar sampai LED DO menyala saat ada api). Modul LM393 umumnya DO = LOW saat api; bila terbalik ubah
-`SENSOR_DIGITAL_FIRE_LEVEL` di `sender.ino`. Sensor 5-6 tidak punya nilai ADC, jadi `sensors` menampilkan status pin HIGH/LOW.
-Alternatif bila perlu sensor analog lebih banyak: multiplexer CD74HC4067 (sudah ada di rancangan proposal) pada satu pin ADC1.
+Strip dicatu dari power supply 5 V dengan GND bersama ESP32 dan kapasitor 470–1000 µF; sensor VCC 3,3 V.
+
+**Semua sensor dibaca analog (AO), tidak ada DO.** Board hanya punya GPIO sampai 35 (tanpa VP/VN = GPIO 36/39) dan ADC2 tidak bisa dibaca
+saat ESP-NOW aktif, jadi pin ADC1 cuma GPIO 32, 33, 34, 35. Karena itu sensor 4-6 dibaca lewat **multiplexer analog CD74HC4067**
+(sudah ada di rancangan proposal) yang memakai satu pin ADC1:
+
+| Pin CD74HC4067 | Sambungan |
+|---|---|
+| SIG / Z (common) | **GPIO 35** (sender) |
+| S0 | **GPIO 25** (sender) |
+| S1 | **GPIO 26** (sender) |
+| S2, S3 | **GND** |
+| EN / E | **GND** (aktif) |
+| VCC, GND | 3,3 V dan GND |
+| C0, C1, C2 | pin AO sensor 4, 5, 6 |
+
+Sensor 1-3 tetap langsung ke GPIO 32/33/34 (wiring uji 3 jalur tidak berubah). Mux punya 16 kanal (C3-C15 masih kosong untuk sensor tambahan;
+untuk lebih dari 4 kanal sambungkan S2/S3 ke GPIO dan tambahkan di `readAdc()`). Ambang sama untuk semua sensor: api bila ADC < 1500,
+aman lagi bila > 1800. Perintah `sensors` menampilkan 6 nilai ADC (sensor 4-6 ditandai `mux C0/C1/C2`).
 
 Pilihan jalur #11, #15, #20 adalah usulan (tiga exit tercakup: e1 lewat jalur lain, e2 lewat #18/#19, e3 lewat #20). Mau jalur lain: ubah `STRIPS[]` di
 `receiver.ino` serta `SENSOR_EDGE[]` dan `SENSOR_PIN[]` di `sender.ino`.
