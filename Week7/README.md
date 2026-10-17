@@ -423,3 +423,29 @@ Contoh: `sensor 3 1` → jalur #19 merah berkedip, ruang 4,5 pindah rute. `reset
 
 Upload: `cd Week7/dijkstra_3jalur/receiver && pio run -t upload` (idem `sender`).
 Sintaks sender dicek dengan compiler PC (mock Arduino); belum dikompilasi PlatformIO dan belum diuji di ESP32 dari sesi ini.
+
+---
+
+# UJI 6 JALUR (`dijkstra_6jalur/`)
+
+Turunan `dijkstra_3jalur/` (kode 3 jalur tidak diubah): **6 strip LED dan 6 sensor api asli (pin AO)**. Power supply 5 V sudah bisa dipakai.
+Tiga jalur pertama memakai pin yang sama dengan uji 3 jalur, jadi wiring lama tidak perlu dibongkar; tiga jalur baru ditambahkan.
+
+| Sensor | Jalur | LED | Pin strip (receiver) | Pin sensor AO (sender) | Keterangan |
+|---|---|---|---|---|---|
+| 1 | #3 j2-j3 | 7 | **GPIO 5 (D5)** → 330 Ω → DIN | **GPIO 32** | sama dengan uji 3 jalur |
+| 2 | #18 j4-e2 | 6 | **GPIO 13 (D13)** → 330 Ω → DIN | **GPIO 33** | sama dengan uji 3 jalur |
+| 3 | #19 j6-e2 | 5 | **GPIO 14 (D14)** → 330 Ω → DIN | **GPIO 34** | sama dengan uji 3 jalur |
+| 4 | #11 j7-j9 | 8 | **GPIO 4 (D4)** → 330 Ω → DIN | **GPIO 35** | baru |
+| 5 | #15 j10-j12 | 8 | **GPIO 18 (D18)** → 330 Ω → DIN | **GPIO 36 (VP)** | baru |
+| 6 | #20 j12-e3 | 5 | **GPIO 19 (D19)** → 330 Ω → DIN | **GPIO 39 (VN)** | baru, exit e3 |
+
+Total 39 LED. Perkiraan arus terburuk (merah semua, `LED_BRIGHTNESS` 60) ±0,5 A, diskalakan dari estimasi 0,45 A untuk 34 LED, bukan hasil ukur.
+Strip dicatu dari power supply 5 V dengan GND bersama ESP32 dan kapasitor 470–1000 µF; sensor VCC 3,3 V. GPIO 35, 36, 39 hanya-input (ADC1, tanpa pull-up), cocok untuk AO.
+
+Pilihan jalur #11, #15, #20 adalah usulan (tiga exit tercakup: e1 lewat jalur lain, e2 lewat #18/#19, e3 lewat #20). Mau jalur lain: ubah `STRIPS[]` di
+`receiver.ino` serta `SENSOR_EDGE[]` dan `SENSOR_PIN[]` di `sender.ino`.
+
+Perintah tambahan dibanding 3 jalur: `sensor <1-6> 1|0` (simulasi teks sensor 1..6) dan `sensors` menampilkan 6 nilai ADC.
+Upload: `cd Week7/dijkstra_6jalur/receiver && pio run -t upload` (idem `sender`).
+Sintaks sender dan receiver dicek dengan compiler PC (mock Arduino, tanpa error/warning); belum dikompilasi PlatformIO dan belum diuji di ESP32 dari sesi ini.
