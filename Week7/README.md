@@ -283,8 +283,11 @@ Folder `dijkstra_5jalur/` adalah **kode baru khusus uji 5 jalur / 5 pin**. Kode 
 dan `led_biasa_2jalur/` tidak diubah.
 
 **Cara kerja:** Dijkstra tetap berjalan di **peta lengkap 20 jalur** (sender, `graph.h`). Strip LED fisik hanya ada di 5 jalur
-dengan panjang berbeda, dan receiver hanya menampilkan 5 jalur itu. Sensor api asli juga hanya di 5 jalur itu; api di jalur
-lain disimulasikan lewat teks (`block j6-j7`).
+dengan panjang berbeda, dan receiver hanya menampilkan 5 jalur itu. Sensor api asli juga hanya di 5 jalur itu.
+
+**Input api HANYA dari sensor AO.** Simulasi lewat teks (`block` / `clear` / `reset`) dimatikan secara default
+(`ALLOW_TEXT_SIM 0` di `sender.ino`) dan menjawab pesan penolakan. Jalur tanpa sensor tidak pernah dianggap kena api, jadi
+hanya api di 5 jalur bersensor yang mengubah rute. Untuk uji tanpa sensor, set `ALLOW_TEXT_SIM 1` lalu upload ulang sender.
 
 | Jalur | Nama | Bobot | LED | Strip (receiver) | Sensor api (sender) |
 |---|---|---|---|---|---|
@@ -309,6 +312,8 @@ GPIO 16 dan 17 tidak dipakai (berlabel RX2 / TX2 di banyak board).
 Parameter di `receiver.ino`: `BLINK_MS`, `ANIMATE` (0 = hijau diam), `CHASE_LEN`, `CHASE_STEP_MS`, `LED_BRIGHTNESS`.
 
 ## Skenario (hasil tes di PC; `room all`, semua ruangan dipandu ke exit terdekat)
+
+Kolom pertama menyebut sumber api. Baris bertanda *(teks)* hanya bisa dicoba dengan `ALLOW_TEXT_SIM 1`, karena jalur itu tidak punya sensor.
 
 | Api di (cara) | Strip hijau | Strip merah berkedip | Keterangan |
 |---|---|---|---|
@@ -360,10 +365,10 @@ set `reversed = true` di `STRIPS[]`. Kalau LED berkedip acak atau salah warna: p
   `#19 j6-e2 AO GPIO 36 nilai=3900 (api bila < 1500)`. Catat nilai saat tanpa api dan saat api didekatkan, lalu atur
   `SENSOR_FIRE_BELOW` / `SENSOR_CLEAR_ABOVE` di `sender.ino` di antara kedua nilai itu. Tiap modul bisa berbeda.
 
-Jalur lain (tanpa sensor, pin = -1) hanya bisa disimulasikan lewat teks.
+Jalur lain (tanpa sensor, pin = -1) tidak pernah dianggap kena api (kecuali `ALLOW_TEXT_SIM 1`).
 
-Perintah sender (Serial Monitor 115200, Newline): `room all`, `room N`, `block j6-j7`, `clear j6-j7`, `reset`, `edges`,
-`sensors` (nilai ADC), `list`.
+Perintah sender (Serial Monitor 115200, Newline): `room all`, `room N`, `start <node>`, `edges`, `sensors` (nilai ADC), `list`, `help`.
+(`block`, `clear`, `reset` hanya aktif bila `ALLOW_TEXT_SIM 1`.)
 Upload: `cd Week7/dijkstra_5jalur/receiver && pio run -t upload` (idem `sender`).
 
 ## Pengiriman ESP-NOW (tidak spam)
@@ -405,8 +410,8 @@ Angka di atas perkiraan dari datasheet, bukan hasil ukur.
 
 # UJI 3 JALUR (`dijkstra_3jalur/`)
 
-Turunan `dijkstra_5jalur/`: **3 strip LED dan 3 sensor api asli (pin AO)**. Input teks di Serial Monitor sender
-(115200, Newline) tetap bisa dipakai bersamaan dengan sensor. Dijkstra memakai peta lengkap 20 jalur; kode 5 jalur dan
+Turunan `dijkstra_5jalur/`: **3 strip LED dan 3 sensor api asli (pin AO)**. **Input api hanya dari sensor AO**:
+simulasi teks dimatikan (`ALLOW_TEXT_SIM 0` di `sender.ino`), jalur tanpa sensor tidak pernah dianggap kena api. Dijkstra memakai peta lengkap 20 jalur; kode 5 jalur dan
 20 jalur tidak diubah.
 
 | Sensor | Jalur | LED | Pin strip (receiver) | Pin sensor AO (sender) |
@@ -418,8 +423,9 @@ Turunan `dijkstra_5jalur/`: **3 strip LED dan 3 sensor api asli (pin AO)**. Inpu
 Total 18 LED. Receiver: GND bersama, +5 V dari USB, kapasitor 470–1000 µF. Sender: VCC sensor 3,3 V (bukan 5 V), GND bersama,
 pin AO ke GPIO 32/33/34 (ADC1, tanpa pull-up). Api bila nilai ADC < 1500, aman lagi bila > 1800 (`sensors` menampilkan nilai untuk kalibrasi).
 
-Perintah: `sensor <1-3> 1|0` (simulasi teks), `sensors` (nilai ADC + status), `room all`, `room N`, `block j6-j7`, `clear`, `reset`, `edges`, `list`.
-Contoh: `sensor 3 1` → jalur #19 merah berkedip, ruang 4,5 pindah rute. `reset` → hapus simulasi teks.
+Perintah (Serial Monitor 115200, Newline): `sensors` (nilai ADC + status), `room all`, `room N`, `start <node>`, `edges`, `list`, `help`.
+`sensor`, `block`, `clear`, `reset` hanya aktif bila `ALLOW_TEXT_SIM 1` lalu upload ulang sender (untuk uji tanpa sensor).
+Contoh: api didekatkan ke sensor 3 → jalur #19 merah berkedip, ruang 4,5 pindah rute.
 
 Upload: `cd Week7/dijkstra_3jalur/receiver && pio run -t upload` (idem `sender`).
 Sintaks sender dicek dengan compiler PC (mock Arduino); belum dikompilasi PlatformIO dan belum diuji di ESP32 dari sesi ini.
